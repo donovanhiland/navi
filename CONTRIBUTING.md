@@ -25,7 +25,9 @@ Navi Dev is a separate app from the installed Navi, with its own permissions and
 
 - **One problem per PR.** Split unrelated fixes, even small ones.
 - **Title:** a conventional commit in plain words, such as `fix(capture): …` or `feat(history): …`.
-  The PR is squashed, so the title becomes the line in the release notes.
+  The PR is squashed, so the title becomes the line in the release notes. CI checks it; run
+  `scripts/pr-title-check.sh "<title>"` to check it first. The rules are in `AGENTS.md`
+  ("Commits and PR titles").
 - **Fill in the template:** Problem, Change, Verification. Show what you checked and what you saw.
   UI changes need before and after screenshots; add a short recording when motion or timing
   matters.

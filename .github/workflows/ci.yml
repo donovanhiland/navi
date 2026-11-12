@@ -84,7 +84,7 @@ jobs:
           fetch-depth: 0
       - name: Lint and test
         run: |
-          shellcheck -x -P SCRIPTDIR scripts/release-plan.sh scripts/release-notes-html.sh scripts/tests/*.sh
+          shellcheck -x -P SCRIPTDIR scripts/release-plan.sh scripts/release-notes-html.sh scripts/pr-title-check.sh scripts/tests/*.sh
           scripts/tests/run.sh
           scripts/release-plan.sh
 

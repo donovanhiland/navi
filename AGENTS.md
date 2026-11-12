@@ -280,7 +280,8 @@ cd Packages/NaviDictation && swift test # cleanup rules, fn gestures, fn setting
 cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--failures] [--save]
 cd Packages/NaviClipboard && swift run -c release history-bench [--sizes 200,1000,5000] [--corpus ascii|mixed] [--save]  # History list benchmark
 swift scripts/comments.swift [--fix]  # fails on any comment in Swift code; --fix removes them
-scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signature checker)
+scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signature checker, PR title)
+scripts/pr-title-check.sh "fix(capture): …"  # checks a PR title the way CI does
 MODE=dry-run VERSION=9.9.9 BUILD=1 NOTES=x SKIP_TESTS=1 scripts/ci-release.sh  # release without Apple keys; nothing published
 scripts/dev.sh          # build and run Navi Dev in place of Navi (fresh: wipe it first; stop: back to Navi)
 ```
@@ -327,6 +328,28 @@ signature checker against Sparkle's `sign_update`; `shellcheck`). `Check` sums
 them up and is the one status to require. `CONTRIBUTING.md` and
 `.github/pull_request_template.md` say what a PR needs (one problem, Problem /
 Change / Verification, screenshots for UI).
+
+### Commits and PR titles
+
+The repo allows only squash merges. The PR title becomes the one commit on
+`main` and one line in the release notes, with ` (#<number>)` added. The PR
+body becomes the commit body.
+
+- PR title: `type(scope): what changed`, in plain words a user understands.
+  Example: `fix(capture): area shots keep the last pixel row`.
+- Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `ci`, `build`,
+  `chore`, `revert`. Scope is optional: lowercase letters, digits, dashes,
+  such as `capture`, `history`, `dictation`, `recording`, `release`.
+- Describe the result, not the work: "area shots keep the last pixel row", not
+  "update CaptureGeometry".
+- 100 characters or fewer, no period at the end. `!` after the scope marks a
+  change that breaks something.
+- The `PR title` workflow (`.github/workflows/pr-title.yml`) runs
+  `scripts/pr-title-check.sh` when a PR opens or its title changes. Run the
+  script before you open a PR.
+- Commits inside a PR are squashed, so their messages are not checked. Use the
+  same format for them anyway.
+- `chore(release):` lines are left out of the release notes.
 
 Share
 `https://github.com/donovanhiland/navi/releases/latest/download/Navi.zip`.

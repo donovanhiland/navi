@@ -11,6 +11,7 @@ import NaviDictation
 // --score     score outputs from another app. File: {"engine": "wispr", "outputs": {"<case id>": "<text>"}}
 // --save      write each run to Bench/results/<date> <engine>.json
 // --failures  print every case that did not pass
+// --latency   time each step after the release for short to very long dictations, then stop
 
 let packageRoot = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 let casesURL = packageRoot.appending(path: "Bench/cases.json")
@@ -34,6 +35,11 @@ var arguments = Array(CommandLine.arguments.dropFirst())
         arguments.removeSubrange(index ... index + 1)
     }
     return found
+}
+
+if flag("--latency") {
+    try await Latency.run(verbose: flag("--failures"))
+    exit(0)
 }
 
 let useAudio = flag("--audio")

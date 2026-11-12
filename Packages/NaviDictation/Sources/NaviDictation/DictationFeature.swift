@@ -7,8 +7,10 @@ import os
 ///
 /// While listening, a small pill with a live waveform shows at the bottom of the screen with the mouse.
 /// Speech runs on the Mac (`SpeechAnalyzer` on macOS 26 and newer, `SFSpeechRecognizer` before that).
-/// A cleanup pass removes filler words and fixes punctuation (Apple Foundation Models when ready, a
-/// rule-based pass otherwise). The text is pasted with ⌘V, so Navi needs the Accessibility permission.
+/// A cleanup pass removes filler words and fixes punctuation (rules, then Apple Foundation Models for
+/// sentences that need more). With Parakeet, speech and cleanup run while the user talks
+/// (`LiveDictation`), so the release waits only for the last sentence. The text is pasted with ⌘V, so
+/// Navi needs the Accessibility permission.
 /// Each result is also added to the Inbox as a `.dictation` item.
 ///
 /// How the app uses it:
@@ -31,7 +33,6 @@ public final class DictationFeature {
 
     private let inbox: Inbox
     private let pill = DictationPill()
-    private let cleaner = TextCleaner()
     private let microphone = Microphone()
     private var monitor: FnKeyMonitor?
     private var session: Session?
@@ -190,9 +191,12 @@ public final class DictationFeature {
         TextCleaner.prewarm()
 
         let (stream, continuation) = AsyncStream<AudioChunk>.makeStream()
+        // The cleaned text. Parakeet works while the user talks; Apple's engines clean up after.
         let transcription = Task.detached { () -> String in
             let engine = await SpeechEngines.best()
-            return try await engine.transcribe(audio: stream)
+            if engine is ParakeetEngine { return try await LiveDictation().transcribe(audio: stream) }
+            let raw = try await engine.transcribe(audio: stream)
+            return await TextCleaner().clean(raw)
         }
         let app = NSWorkspace.shared.frontmostApplication
         let session = Session(
@@ -237,7 +241,7 @@ public final class DictationFeature {
         pill.model.isLocked = true
     }
 
-    /// The user is done talking: keep the last 200 ms, stop the capture, clean up the text, and type it.
+    /// The user is done talking: keep the end of the last word, stop the capture, and type the text.
     private func commit() {
         guard let session else { return }
         self.session = nil
@@ -252,20 +256,19 @@ public final class DictationFeature {
                 isProcessing = false
                 updateMicrophone()
             }
-            try? await Task.sleep(for: Microphone.releaseTail)
+            await microphone.waitForReleaseTail(releasedAt: released)
+            let tail = ContinuousClock.now - released
             microphone.endCapture()
-            let raw: String
+            let text: String
             do {
-                raw = try await session.transcription.value
+                text = try await session.transcription.value
             } catch {
                 Self.logger.error("Speech failed: \(error.localizedDescription)")
-                raw = ""
+                text = ""
             }
-            let heard = ContinuousClock.now
-            let text = await cleaner.clean(raw)
             pill.hide()
             Self.logger.info(
-                "Release to text: \((ContinuousClock.now - released).milliseconds) ms (speech \((heard - released).milliseconds) ms, cleanup \((ContinuousClock.now - heard).milliseconds) ms)"
+                "Release to text: \((ContinuousClock.now - released).milliseconds) ms (tail \(tail.milliseconds) ms)"
             )
             guard !text.isEmpty else { return }
             guard TextInserter.hasAccessibility else {
@@ -321,8 +324,4 @@ extension TextInserter {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
-}
-
-private extension Duration {
-    var milliseconds: Int { Int(components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000) }
 }

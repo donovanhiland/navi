@@ -20,7 +20,7 @@ features into `Packages/NaviDictation` and checks them with the benchmark.
 |---|---|---|
 | Speech to text | Parakeet TDT (default, through FluidAudio), Whisper, Apple Speech (`src/apple_speech.swift`), your own models (`docs/features/own-models.md`) | Parakeet TDT v3 through FluidAudio (`ParakeetEngine.swift`, from Hex). Apple Speech until the model is loaded |
 | Filler removal | Rules, no model: um, umm, uh, uhh, erm, er, ah (`src/dictation/filler_words.rs`, Labs, off by default) | Rules (`TextCleanup`), then Apple's model |
-| AI cleanup | **Post-processing:** an AI rewrite with your own prompt, sent to a running OpenCode service and the model you pick there (local or cloud). Off until you turn it on (`src/dictation/modes.rs`, `src/desktop/opencode_service.rs`). Also the "Bark Clean" Parakeet model, which drops fillers while it transcribes | Apple's on-device model (`TextCleaner`), on by default |
+| AI cleanup | **Post-processing:** an AI rewrite with your own prompt, sent to a running OpenCode service and the model you pick there (local or cloud). Off until you turn it on (`src/dictation/modes.rs`, `src/desktop/opencode_service.rs`). Also the "Bark Clean" Parakeet model, which drops fillers while it transcribes | Apple's on-device model (`TextCleaner`), on by default, per sentence, only for sentences that need it |
 | Modes | Per app or website: its own corrections, rewrite prompt, and transforms (`src/dictation/modes.rs`) | None. One cleanup for all apps |
 | Replacements | Global text replacements, then each mode's corrections (`src/dictation/text_replacements.rs`) | None |
 | Transforms | Your own JS/TS functions that change text before paste; can call Ollama (`site/public/docs/transforms.md`) | None |
@@ -30,7 +30,8 @@ features into `Packages/NaviDictation` and checks them with the benchmark.
 | Vocabulary | Vocabulary biasing for Parakeet (`docs/features/vocabulary.md`, Labs) | None |
 | Spoken punctuation, formatting | Labs, Output group (`docs/features/labs.md`) | None |
 | Live text | Words beside the HUD while you talk (Labs) | None |
-| Microphone | Keep ready (stream open, 450 ms pre-roll) or Release when idle; 200 ms release tail (`docs/features/dictation.md`, Warm And Cold Capture) | "Keep Microphone Ready" (off by default; then the mic is set up but off until the press, like Wispr Flow), 450 ms pre-roll, 200 ms tail; input-only AUHAL unit, like Hex's cpal stream, so output audio is never touched (`AudioCapture.swift`) |
+| Speech while talking | Streaming finish: a live Parakeet stream (Unified English, 1.04 s chunks) fed every 160 ms; the release only finalizes it, with the whole clip as the fallback (`docs/features/dictation.md`, Streaming Finish) | Sentence passes with Parakeet v3 (`LiveDictation.swift`): about once a second and when the user goes quiet, the audio after the last finished sentence is transcribed; finished sentences are cut at a pause in the audio and cleaned at once. The release transcribes only the rest, or reuses the newest pass |
+| Microphone | Keep ready (stream open, 450 ms pre-roll) or Release when idle; 200 ms release tail (`docs/features/dictation.md`, Warm And Cold Capture) | "Keep Microphone Ready" (off by default; then the mic is set up but off until the press, like Wispr Flow), 450 ms pre-roll, tail until 200 ms of quiet (40 to 600 ms); input-only AUHAL unit, like Hex's cpal stream, so output audio is never touched (`AudioCapture.swift`) |
 | Shortcut | Option by default. Hold, toggle, double-tap; Fn/Globe, keys, mouse buttons | Hold fn, double-tap fn to lock |
 | Meetings | Call detection, recording, transcripts, chapters, notes | None |
 | CLI | `hex dictation start/stop/toggle`, `hex paste-last`, transcript CLI | None |

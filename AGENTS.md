@@ -66,9 +66,19 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   dot). The mic is an input-only AUHAL unit on the default input, like Hex
   (cpal). Not `AVAudioEngine`: it joins the mic and the speakers in a hidden
   aggregate device, which changes music and cuts it out when it stops.
-  Recording runs 200 ms past the release so
-  the last word is kept. The cleanup model session is pre-warmed. Timings log
-  under the `Dictation` category ("Release to text: … ms"). fn with another key (fn+⌫,
+  After the release, recording runs on until
+  200 ms of quiet (at least 40 ms, at most 600 ms), so the last word is kept and
+  a user who already stopped talking waits only 40 ms. Speech and cleanup run
+  while the user talks (`LiveDictation`): about once a second, and when the user
+  goes quiet, Parakeet transcribes the audio after the last finished sentence. A
+  sentence is finished when another one follows it with a real pause (found in
+  the audio); it is cleaned in the background and later passes start after the
+  pause. When nothing was said after the newest pass, the release reuses it, so
+  the text is often ready at once. Cleanup is per sentence: rules, then Apple's
+  model only for sentences that need it (`TextCleaner.needsModel`: corrections,
+  lists, spoken punctuation, filler words rules keep, repeats, long sentences
+  with no commas). Timings log under the `Dictation` category ("Release to
+  text: … ms", "Live: …"). fn with another key (fn+⌫,
   fn+arrows) never dictates. The first launch asks before it uses fn. When on,
   Navi borrows the fn key setting (`AppleFnUsageType` = 0, "Do Nothing", applied
   with `activateSettings -u`) while it runs and puts it back on quit.
@@ -278,6 +288,7 @@ NAVI_TOOLTIP_FRAMES=/tmp/navi-tips swift test --filter TooltipDemo  # in NaviCap
 cd Packages/NaviRecording && swift test # recording math, GIF, audio mixdown
 cd Packages/NaviDictation && swift test # cleanup rules, fn gestures, fn setting, scoring
 cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--failures] [--save]
+cd Packages/NaviDictation && swift run -c release dictation-bench --latency [--failures]  # release-to-text time for 3 s to 60 s dictations, live and not
 cd Packages/NaviClipboard && swift run -c release history-bench [--sizes 200,1000,5000] [--corpus ascii|mixed] [--save]  # History list benchmark
 scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signature checker)
 MODE=dry-run VERSION=9.9.9 BUILD=1 NOTES=x SKIP_TESTS=1 scripts/ci-release.sh  # release without Apple keys; nothing published

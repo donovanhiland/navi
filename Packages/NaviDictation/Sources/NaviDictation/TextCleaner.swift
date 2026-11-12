@@ -2,18 +2,36 @@ import Foundation
 import FoundationModels
 import os
 
-/// The cleanup pass for dictated text. Rule-based cleanup always runs first. When Apple Foundation
-/// Models is ready on this Mac, the on-device model then polishes the text. If the model is missing,
-/// slow, or gives a bad answer, the rule-based text is the result.
+/// The cleanup pass for dictated text. The text is split into sentences, and each one is cleaned on
+/// its own, all at the same time, so the wait does not grow with the length of the dictation.
+///
+/// Rule-based cleanup always runs first. When the sentence still looks like it needs work (a
+/// self-correction, a list, filler words that rules keep, no commas in a long sentence), Apple's
+/// on-device model polishes it. If the model is missing, slow, or gives a bad answer, the rule-based
+/// text is the result.
 struct TextCleaner: Sendable {
-    /// How long the model may take before the rule-based text is used.
-    var modelTimeout: Duration = .seconds(4)
+    /// How long the model may take for one sentence before the rule-based text is used.
+    var modelTimeout: Duration = .seconds(2)
 
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "TextCleaner")
 
     func clean(_ raw: String) async -> String {
+        let sentences = Sentences.split(raw.replacingOccurrences(of: "\n", with: " "))
+        let cleaned = await withTaskGroup(of: (Int, String).self) { group in
+            for (index, sentence) in sentences.enumerated() {
+                group.addTask { (index, await cleanSentence(sentence)) }
+            }
+            var results = [String](repeating: "", count: sentences.count)
+            for await (index, text) in group { results[index] = text }
+            return results
+        }
+        return Sentences.join(cleaned)
+    }
+
+    /// Cleans one sentence: rules, then the model when the sentence needs it.
+    func cleanSentence(_ raw: String) async -> String {
         let basic = TextCleanup.clean(raw)
-        guard !basic.isEmpty else { return basic }
+        guard !basic.isEmpty, Self.needsModel(basic) else { return basic }
         guard #available(macOS 26.0, *), Self.modelIsReady else { return basic }
 
         let timeout = modelTimeout
@@ -29,6 +47,33 @@ struct TextCleaner: Sendable {
         }
         guard let polished, Self.isPlausible(polished, comparedTo: basic) else { return basic }
         return polished
+    }
+
+    // MARK: When to use the model
+
+    /// Signs that rules alone cannot clean a sentence: a self-correction, a spoken list or spoken
+    /// punctuation, filler words that rules keep, a repeated word or phrase, a spoken file name or
+    /// naming style, or a long sentence with no commas.
+    private static let needsModelPatterns: [String] = [
+        #"\b(?:actually|no wait|wait no|i mean|scratch that|sorry|or rather|make that|no,? (?:make it|it's|its))\b"#,
+        #"\b(?:number (?:one|two|three|four|five|\d)|firstly|secondly|thirdly|bullet(?: point)?|new line|next line|new paragraph|to do|todo)\b"#,
+        #"\b(?:first|second|third)(?:,|\s+(?:we|i|you|let's|call|send|check|make|get|go|do|buy|add|fix))"#,
+        #"\b(?:comma|period|full stop|question mark|exclamation (?:point|mark)|colon|semicolon|open quote|close quote|dash)\b"#,
+        #"\b(?:like|you know|basically|kind of|sort of|i guess|literally|so yeah|right so|okay so|so um)\b"#,
+        #"\b(\w+(?:\s+\w+){0,2})\s+\1\b"#,
+        #"\b(?:dot (?:com|swift|js|ts|json|md|py|io|app|dev|org|net)|camel case|snake case|kebab case|all caps)\b"#,
+    ]
+
+    static func needsModel(_ sentence: String) -> Bool {
+        // Lowercase first: a repeat check with a back reference does not ignore case.
+        let lowered = sentence.lowercased()
+        for pattern in needsModelPatterns
+        where lowered.range(of: pattern, options: [.regularExpression, .caseInsensitive]) != nil {
+            return true
+        }
+        // A long sentence with no commas probably needs punctuation.
+        let words = sentence.split(whereSeparator: \.isWhitespace).count
+        return words >= 16 && !sentence.contains(where: { ",;:".contains($0) })
     }
 
     // MARK: Model

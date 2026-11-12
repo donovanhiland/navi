@@ -66,8 +66,15 @@ struct PreRollBuffer<Chunk> {
 final class Microphone: @unchecked Sendable {
     /// Audio kept from before the press (Hex keeps 450 ms).
     static let preRoll: Double = 0.45
-    /// Audio kept after the release, so the last word is not cut (Hex's `POST_RELEASE_TAIL`).
-    static let releaseTail: Duration = .milliseconds(200)
+    /// Recording goes on after the release until this much quiet, so the last word is not cut (Hex's
+    /// 200 ms `POST_RELEASE_TAIL`). When the user stopped talking before the release, the wait is short.
+    static let quietToEnd: Duration = .milliseconds(200)
+    /// The shortest wait after the release, for audio still on its way from the device.
+    static let minimumTail: Duration = .milliseconds(40)
+    /// The longest wait after the release, while speech goes on (Hex's cap).
+    static let maximumTail: Duration = .milliseconds(600)
+    /// Loudness (0...1, see `loudness(of:)`) that counts as sound: about -40 dB.
+    static let soundLevel: Float = 0.45
 
     /// Holds audio buffers, which only move under the lock.
     private struct State: @unchecked Sendable {
@@ -77,6 +84,7 @@ final class Microphone: @unchecked Sendable {
         var sink: AsyncStream<AudioChunk>.Continuation?
         var preRoll = PreRollBuffer<AVAudioPCMBuffer>(capacity: 0)
         var level: Float = 0
+        var lastSound: ContinuousClock.Instant?
     }
 
     /// Setup, start, stop, and teardown take turns (they run on different threads).
@@ -196,6 +204,25 @@ final class Microphone: @unchecked Sendable {
         for buffer in kept { sink.yield(AudioChunk(buffer: buffer)) }
     }
 
+    /// Waits after the release until the user has been quiet for `quietToEnd`, between `minimumTail`
+    /// and `maximumTail`. Someone who stopped talking before the release waits only `minimumTail`.
+    func waitForReleaseTail(releasedAt released: ContinuousClock.Instant) async {
+        while true {
+            let now = ContinuousClock.now
+            let lastSound = state.withLock { $0.lastSound }
+            if Self.tailIsDone(sinceRelease: now - released, sinceSound: lastSound.map { now - $0 }) { return }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
+    /// True when the release tail can end. Pure, so it can be tested.
+    static func tailIsDone(sinceRelease: Duration, sinceSound: Duration?) -> Bool {
+        if sinceRelease < minimumTail { return false }
+        if sinceRelease >= maximumTail { return true }
+        guard let sinceSound else { return true }
+        return sinceSound >= quietToEnd
+    }
+
     /// Ends the capture: the sink gets no more audio and finishes.
     func endCapture() {
         let sink = state.withLock { state -> AsyncStream<AudioChunk>.Continuation? in
@@ -292,8 +319,10 @@ final class Microphone: @unchecked Sendable {
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
         let level = Self.loudness(of: buffer)
+        let now = ContinuousClock.now
         let sink = state.withLockUnchecked { state -> AsyncStream<AudioChunk>.Continuation? in
             state.level = level
+            if level >= Self.soundLevel { state.lastSound = now }
             // Each slice is a new buffer, so the pre-roll can keep it as is.
             if state.sink == nil { state.preRoll.append(buffer, frames: Int(buffer.frameLength)) }
             return state.sink

@@ -286,6 +286,7 @@ cd Packages/NaviRecording && swift test # recording math, GIF, audio mixdown
 cd Packages/NaviDictation && swift test # cleanup rules, fn gestures, fn setting, scoring
 cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--failures] [--save]
 cd Packages/NaviClipboard && swift run -c release history-bench [--sizes 200,1000,5000] [--corpus ascii|mixed] [--save]  # History list benchmark
+NAVI_HISTORY_SNAPSHOTS=/tmp/navi-history swift test --filter HistorySnapshot  # in NaviClipboard: draws the ⇧⌘V panel to PNGs (each scope, and the order after a dictation)
 swift scripts/comments.swift [--fix]  # fails on any comment in Swift code; --fix removes them
 scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signature checker)
 MODE=dry-run VERSION=9.9.9 BUILD=1 NOTES=x SKIP_TESTS=1 scripts/ci-release.sh  # release without Apple keys; nothing published

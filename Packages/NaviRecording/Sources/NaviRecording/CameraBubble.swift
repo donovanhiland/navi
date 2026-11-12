@@ -1,9 +1,6 @@
 import AppKit
 import AVFoundation
 
-/// A round, draggable camera preview that floats above other windows.
-///
-/// It is a normal Navi window, so it shows up in the recording.
 @MainActor
 final class CameraBubble {
     private static let diameter: CGFloat = 160
@@ -13,13 +10,11 @@ final class CameraBubble {
 
     var isVisible: Bool { panel != nil }
 
-    /// Shows the bubble inside `region` (Cocoa global), at the bottom right. Returns false without camera access.
     func show(inside region: CGRect) async -> Bool {
         guard panel == nil else { return true }
         guard await Permissions.camera(), let device = AVCaptureDevice.default(for: .video),
               let input = try? AVCaptureDeviceInput(device: device)
         else { return false }
-        // The user may have turned the camera off while the permission prompt was open.
         guard panel == nil else { return true }
 
         let session = AVCaptureSession()
@@ -75,7 +70,6 @@ final class CameraBubble {
     }
 }
 
-/// Starts and stops a capture session off the main thread. Both calls block.
 private final class SessionBox: @unchecked Sendable {
     private let session: AVCaptureSession
     private let queue = DispatchQueue(label: "co.navi.recording.camera")

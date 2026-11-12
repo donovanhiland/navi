@@ -18,13 +18,11 @@ import Testing
     }
 
     @Test func pixelRectFlipsAndScalesForRetina() {
-        // A 100 x 50 point view with a 2x image. The selection sits in the bottom-left corner.
         let rect = CaptureGeometry.pixelRect(
             forSelection: CGRect(x: 0, y: 0, width: 10, height: 10),
             viewSize: CGSize(width: 100, height: 50),
             imageSize: CGSize(width: 200, height: 100)
         )
-        // The bottom edge sits on the image edge, so only the right side gains the pixel under the corner.
         #expect(rect == CGRect(x: 0, y: 80, width: 21, height: 20))
     }
 
@@ -83,7 +81,6 @@ import Testing
     }
 
     @Test func snapPointIgnoresEdgesFarAlongTheLine() {
-        // The window's left edge line passes x = 100, but the point is far above the window.
         let bounds = CGRect(x: 0, y: 0, width: 1000, height: 800)
         let window = CGRect(x: 100, y: 100, width: 400, height: 300)
         let point = CGPoint(x: 103, y: 700)
@@ -96,13 +93,12 @@ import Testing
         let behind = CGRect(x: 200, y: 200, width: 100, height: 100)
         let point = CGPoint(x: 203, y: 250)
         #expect(CaptureGeometry.snap(point, toWindows: [front, behind], bounds: bounds, tolerance: 6) == point)
-        // With the windows the other way round, the small window's edge is in front and counts.
         #expect(CaptureGeometry.snap(point, toWindows: [behind, front], bounds: bounds, tolerance: 6) == CGPoint(x: 200, y: 250))
     }
 
     @Test func fileNameUsesTheCleanShotStyle() throws {
         let utc = try #require(TimeZone(identifier: "UTC"))
-        let date = Date(timeIntervalSince1970: 1_793_982_612) // 2026-11-06 16:30:12 UTC
+        let date = Date(timeIntervalSince1970: 1_793_982_612)
         #expect(CaptureGeometry.fileName(for: date, fileExtension: "png", timeZone: utc) == "Navi 2026-11-06 at 16.30.12.png")
     }
 
@@ -147,7 +143,6 @@ import Testing
         #expect(CaptureGeometry.easeOut(0.5) > 0.5)
     }
 
-    // Edit after capture: where the toolbar goes, in top-left coordinates.
     private static let screen = CGSize(width: 1000, height: 800)
     private static let bar = CGSize(width: 400, height: 40)
 

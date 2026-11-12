@@ -3,16 +3,9 @@ import CoreMedia
 import ScreenCaptureKit
 import os
 
-/// Receives `SCStream` samples and writes them to an MP4 with `AVAssetWriter`.
-///
-/// Video is H.264. Computer audio and microphone are AAC, each in its own track.
-/// Every callback and `finish()` run on `queue`, so the writer state needs no lock.
 final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
-    /// One serial queue for every output type. Pass it as `sampleHandlerQueue`.
     let queue = DispatchQueue(label: "co.navi.recording.samples", qos: .userInitiated)
 
-    /// Called when the stream stops by itself (a display left, or the system ended sharing).
-    /// Runs on `queue`. Set it before the stream starts.
     var onStreamStopped: (@Sendable (Error?) -> Void)?
 
     private let writer: AVAssetWriter
@@ -64,7 +57,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             systemAudioInput = nil
         }
         if microphone {
-            // Match the mic's own channel count (a USB mic or headset can be stereo), so its buffers are accepted.
             let input = audioInput(channels: Self.microphoneChannels())
             writer.add(input)
             microphoneInput = input
@@ -78,8 +70,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    // MARK: SCStreamOutput
-
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard !finished, sampleBuffer.isValid, writer.status == .writing else { return }
         switch type {
@@ -90,16 +80,11 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    // MARK: SCStreamDelegate
-
     func stream(_ stream: SCStream, didStopWithError error: any Error) {
         onStreamStopped?(error)
     }
 
-    // MARK: Writing
-
     private func appendVideo(_ sampleBuffer: CMSampleBuffer) {
-        // Idle and blank frames carry no image. Only complete frames go to the file.
         guard CMSampleBufferGetImageBuffer(sampleBuffer) != nil,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]],
@@ -118,7 +103,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         if videoInput.append(sampleBuffer) { lastVideoTime = time }
     }
 
-    /// Channels of the default input device, 1 or 2.
     static func microphoneChannels() -> Int {
         guard let format = AVCaptureDevice.default(for: .audio)?.activeFormat.formatDescription,
               let description = CMAudioFormatDescriptionGetStreamBasicDescription(format)
@@ -127,7 +111,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     }
 
     private func appendAudio(_ sampleBuffer: CMSampleBuffer, to input: AVAssetWriterInput?) {
-        // Audio before the first video frame has no place on the timeline.
         guard sessionStarted, let input, input.isReadyForMoreMediaData,
               CMSampleBufferDataIsReady(sampleBuffer),
               sampleBuffer.presentationTimeStamp >= firstTime
@@ -138,10 +121,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         }
     }
 
-    // MARK: Finish
-
-    /// Ends the file. Returns its length in seconds.
-    /// Throws `RecordingError.noFrames` when no video frame ever arrived.
     func finish() async throws -> TimeInterval {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { self.finishOnQueue(continuation) }
@@ -159,7 +138,6 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
             return
         }
 
-        // A still screen sends no frames. End the file at the stop time so the last frame keeps its length.
         var end = lastVideoTime
         let now = CMClockGetTime(CMClockGetHostTimeClock())
         if now > end, (now - end).seconds < 86_400 { end = now }

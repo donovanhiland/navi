@@ -4,8 +4,6 @@ import Testing
 
 @testable import NaviCapture
 
-/// Draws the markup editor to PNG files so its look can be checked without a screen.
-/// Off by default. Run: NAVI_SNAPSHOTS=/tmp/navi-snaps swift test --filter EditorSnapshot
 @MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["NAVI_SNAPSHOTS"] != nil))
 struct EditorSnapshotTests {
@@ -38,7 +36,6 @@ struct EditorSnapshotTests {
         }
     }
 
-    /// The text tool just picked: the box is open with no click, and the first letters are in.
     @Test func textToolOpensABox() throws {
         let folder = URL(filePath: ProcessInfo.processInfo.environment["NAVI_SNAPSHOTS"]!)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -64,9 +61,6 @@ struct EditorSnapshotTests {
         }
     }
 
-    /// Edit after capture over a 1440 × 900 screen. NAVI_BACKDROP may name a screenshot to use as
-    /// the frozen screen; otherwise a plain gradient stands in for it.
-    /// Areas that put the toolbar below, above (near the bottom), and inside (whole screen).
     static let areas: [String: CGRect] = [
         "middle": CGRect(x: 420, y: 180, width: 560, height: 360),
         "bottom": CGRect(x: 300, y: 480, width: 640, height: 400),
@@ -99,7 +93,6 @@ struct EditorSnapshotTests {
             view.appearance = NSAppearance(named: appearance)
             view.frame = CGRect(origin: .zero, size: screen)
             view.layoutSubtreeIfNeeded()
-            // The toolbar measures itself on the first pass and moves into place on the next.
             RunLoop.main.run(until: Date().addingTimeInterval(0.2))
             view.layoutSubtreeIfNeeded()
             let rep = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))

@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Draws a capture on a background.
 enum BackgroundRenderer {
     static func render(_ image: CGImage, style: BackgroundStyle, scale: CGFloat) -> CGImage? {
         var content = image
@@ -58,7 +57,6 @@ enum BackgroundRenderer {
             guard let source = CGImageSourceCreateWithURL(URL(filePath: path) as CFURL, nil),
                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
             else { return }
-            // Fill the rect, cropping the picture like "aspect fill".
             let fill = max(rect.width / CGFloat(image.width), rect.height / CGFloat(image.height))
             let size = CGSize(width: CGFloat(image.width) * fill, height: CGFloat(image.height) * fill)
             context.draw(image, in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
@@ -77,7 +75,6 @@ enum BackgroundRenderer {
             return true
         }
         guard drawn else { return nil }
-        // The buffer rows run top to bottom.
         let rect = AutoBalance.balancedRect(width: width, height: height) { x, y in
             let index = (y * width + x) * 4
             return (bytes[index], bytes[index + 1], bytes[index + 2], bytes[index + 3])
@@ -86,7 +83,6 @@ enum BackgroundRenderer {
     }
 }
 
-/// The background tool window.
 @MainActor
 final class BackgroundEditor: NSObject, NSWindowDelegate {
     private var window: NSWindow?

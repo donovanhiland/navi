@@ -1,6 +1,5 @@
 import AppKit
 
-/// A red item in the menu bar that shows the elapsed time ("● 0:12"). Click it to stop.
 @MainActor
 final class StopPill {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -21,7 +20,6 @@ final class StopPill {
         setTitle(seconds: 0)
     }
 
-    /// The menu bar window. Leave it out of the video.
     var windowID: CGWindowID? {
         item.button?.window.map { CGWindowID($0.windowNumber) }
     }

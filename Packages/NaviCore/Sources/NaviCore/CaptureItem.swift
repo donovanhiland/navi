@@ -1,6 +1,5 @@
 import Foundation
 
-/// What kind of capture an item holds. Every feature writes into the same Inbox.
 public enum CaptureKind: String, Codable, Sendable, CaseIterable {
     case text
     case image
@@ -8,33 +7,22 @@ public enum CaptureKind: String, Codable, Sendable, CaseIterable {
     case recording
     case dictation
 
-    /// A still image that the markup editor can open.
     public var isImage: Bool { self == .image || self == .screenshot }
 }
 
-/// One entry in the shared history list.
 public struct CaptureItem: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
     public var kind: CaptureKind
-    /// First time this content was captured.
     public var createdAt: Date
-    /// Last time this content was copied or pasted. The history is sorted by this.
     public var lastUsedAt: Date
-    /// How many times this content was copied.
     public var copyCount: Int
     public var pinned: Bool
-    /// Text content, for text and dictation items.
     public var text: String?
-    /// File name inside the Inbox files folder, for images, screenshots, and recordings.
     public var fileName: String?
-    /// Name of the app that was in front when the item was captured.
     public var sourceApp: String?
-    /// Bundle ID of that app, used to show its icon.
     public var sourceBundleID: String?
-    /// SHA-256 of the content. Used to find duplicates.
     public var contentHash: String
 
-    /// Creates an item from its stored fields. `Inbox` sets the ID and times; the history benchmark seeds with it.
     public init(
         id: UUID, kind: CaptureKind, createdAt: Date, lastUsedAt: Date, copyCount: Int, pinned: Bool,
         text: String?, fileName: String?, sourceApp: String?, sourceBundleID: String?, contentHash: String
@@ -71,11 +59,8 @@ extension CaptureItem {
 }
 
 extension CaptureItem {
-    /// Histories below this size decode on one thread; splitting costs more than it saves.
     private static let parallelThreshold = 512 * 1024
 
-    /// Decodes a `history.json` payload. A big file is cut at item boundaries and decoded in parallel; if the file is not
-    /// compact `JSONEncoder` output or a piece fails, it decodes whole so results and errors match `JSONDecoder`.
     nonisolated static func decodeHistory(from data: Data) throws -> [CaptureItem] {
         if data.count >= parallelThreshold, let items = decodeInParallel(data) { return items }
         return try JSONDecoder().decode([CaptureItem].self, from: data)
@@ -84,7 +69,6 @@ extension CaptureItem {
     private nonisolated static func decodeInParallel(_ data: Data) -> [CaptureItem]? {
         let pieces = min(ProcessInfo.processInfo.activeProcessorCount, 8)
         guard pieces > 1, data.first == UInt8(ascii: "["), data.last == UInt8(ascii: "]") else { return nil }
-        // Inside a JSON string a quote is always escaped, so `},{"` only ever sits between two items.
         let separator: [UInt8] = Array("},{\"".utf8)
         let ranges: [Range<Int>]? = data.withUnsafeBytes { raw -> [Range<Int>]? in
             var cuts = [1]

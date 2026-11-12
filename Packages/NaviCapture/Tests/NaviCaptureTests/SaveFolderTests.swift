@@ -3,7 +3,6 @@ import Testing
 
 @testable import NaviCapture
 
-/// Which folder Save writes to, given Navi's override and the macOS screenshot folder.
 @Suite struct SaveFolderTests {
     private let home = URL(filePath: "/Users/tester", directoryHint: .isDirectory)
     private let desktop = URL(filePath: "/Users/tester/Desktop", directoryHint: .isDirectory)

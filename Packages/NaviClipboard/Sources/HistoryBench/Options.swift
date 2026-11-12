@@ -1,6 +1,5 @@
 import Foundation
 
-/// Command-line options for `history-bench`.
 struct BenchOptions {
     var sizes = [200, 1000, 5000]
     var iterations = 20
@@ -52,7 +51,6 @@ enum Corpus: String {
     case mixed
 }
 
-/// Errors that stop the benchmark with a message.
 enum BenchError: Error, CustomStringConvertible {
     case usage(String)
     case render

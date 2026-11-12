@@ -1,7 +1,6 @@
 import Carbon.HIToolbox
 import NaviCore
 
-/// Navi's fixed global shortcuts. `AppDelegate` registers them, and a new History shortcut is checked against them.
 enum NaviHotKeys {
     static let menu = KeyCombo(keyCode: UInt32(kVK_ANSI_N), modifiers: UInt32(cmdKey | shiftKey | optionKey))
     static let captureText = KeyCombo(keyCode: UInt32(kVK_ANSI_T), modifiers: UInt32(cmdKey | shiftKey | optionKey))
@@ -13,8 +12,6 @@ enum NaviHotKeys {
     static let fullscreenToClipboard = KeyCombo(keyCode: UInt32(kVK_ANSI_3), modifiers: UInt32(cmdKey | shiftKey | controlKey))
     static let areaToClipboard = KeyCombo(keyCode: UInt32(kVK_ANSI_4), modifiers: UInt32(cmdKey | shiftKey | controlKey))
 
-    /// Every combo Navi uses, by the name the "already uses" message shows. The screenshot keys stay reserved
-    /// even when Navi is not using them, so turning them on later cannot clash with a saved shortcut.
     static let reserved: [String: KeyCombo] = [
         "Navi Menu": menu,
         "Capture Text": captureText,

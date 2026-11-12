@@ -1,11 +1,8 @@
 import AppKit
 import NaviCore
 
-/// Watches the system pasteboard and adds each new copy to the Inbox.
 @MainActor
 final class ClipboardWatcher {
-    /// Pasteboard markers that password managers and other apps set to say "do not save this".
-    /// See nspasteboard.org.
     static let skippedTypes: Set<NSPasteboard.PasteboardType> = [
         .init("org.nspasteboard.ConcealedType"),
         .init("org.nspasteboard.TransientType"),
@@ -38,7 +35,6 @@ final class ClipboardWatcher {
         timer = nil
     }
 
-    /// Tells the watcher that Navi itself made this pasteboard change, so it is not saved again.
     func markOwnChange(_ changeCount: Int) {
         ownChangeCount = changeCount
     }

@@ -2,11 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 import NaviCore
 
-/// Types text into the front app. It puts the text on the pasteboard, presses ⌘V, and then puts the
-/// old pasteboard contents back. Pressing keys in another app needs the Accessibility permission.
 @MainActor
 enum TextInserter {
-    /// How long the pasted text stays on the pasteboard before the old contents return.
     static let restoreDelay: Duration = .milliseconds(600)
 
     private static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
@@ -20,17 +17,14 @@ enum TextInserter {
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        // Navi's clipboard watcher skips this. Other clipboard managers skip the "transient" mark.
         pasteboard.setData(Data(), forType: NaviPasteboard.ownType)
         pasteboard.setData(Data(), forType: transientType)
         let ourChangeCount = pasteboard.changeCount
 
-        // Give the pasteboard a moment to settle before the paste.
         try? await Task.sleep(for: .milliseconds(30))
         pressCommandV()
         try? await Task.sleep(for: restoreDelay)
 
-        // If the user copied something else in the meantime, leave it alone.
         guard pasteboard.changeCount == ourChangeCount else { return }
         restore(saved, to: pasteboard)
     }

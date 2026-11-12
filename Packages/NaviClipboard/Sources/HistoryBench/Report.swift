@@ -1,14 +1,11 @@
 import Foundation
 
-/// Timings for one scenario, in milliseconds over the timed runs.
 struct ScenarioResult: Codable {
     let name: String
     let medianMs: Double
     let p95Ms: Double
     let minMs: Double
-    /// Items the scenario returned on its last run. Nil where that does not apply.
     let matches: Int?
-    /// Items a cold search skipped for lack of keys.
     let deferred: Int?
 
     init(name: String, milliseconds: [Double], matches: Int? = nil, deferred: Int? = nil) {
@@ -22,20 +19,17 @@ struct ScenarioResult: Codable {
     }
 }
 
-/// All scenarios for one history size.
 struct SizeResult: Codable {
     let items: Int
     let historyKB: Double
     let scenarios: [ScenarioResult]
 }
 
-/// The machine a report was measured on.
 struct Machine: Codable {
     let cpu: String
     let macOS: String
 }
 
-/// One full run of `history-bench`.
 struct BenchReport: Codable {
     let recorded: String
     let commit: String
@@ -45,25 +39,21 @@ struct BenchReport: Codable {
     let iterations: Int
     let sizes: [SizeResult]
 
-    /// The report as pretty-printed JSON.
     func json() throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return String(decoding: try encoder.encode(self), as: UTF8.self)
     }
 
-    /// Writes the JSON to `Bench/results/<date>-<commit>.json` under `packageRoot`.
     func save(in packageRoot: URL) throws -> URL {
         let folder = packageRoot.appending(path: "Bench/results", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        // Colons are not allowed in some file systems; the existing results use dots.
         let stamp = String(recorded.replacingOccurrences(of: ":", with: ".").dropLast())
         let url = folder.appending(path: "\(stamp)-\(commit).json")
         try (json() + "\n").write(to: url, atomically: true, encoding: .utf8)
         return url
     }
 
-    /// A fixed-width table, one block per size.
     func table() -> String {
         var lines = [
             "History benchmark · commit \(commit) · \(machine.cpu) · macOS \(machine.macOS) · seed \(seed) · corpus \(corpus) · \(iterations) runs",
@@ -99,22 +89,18 @@ struct BenchReport: Codable {
     }
 }
 
-/// Median and percentiles of timing samples.
 enum Statistics {
-    /// Median of sorted, non-empty samples. Averages the two middle values for an even count.
     static func median(_ sorted: [Double]) -> Double {
         let middle = sorted.count / 2
         return sorted.count.isMultiple(of: 2) ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
     }
 
-    /// Nearest-rank percentile of sorted, non-empty samples.
     static func percentile(_ sorted: [Double], _ fraction: Double) -> Double {
         let rank = Int((fraction * Double(sorted.count)).rounded(.up)) - 1
         return sorted[min(max(rank, 0), sorted.count - 1)]
     }
 }
 
-/// The value of a sysctl string, such as `machdep.cpu.brand_string`.
 func sysctlString(_ name: String) -> String? {
     var size = 0
     guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
@@ -123,7 +109,6 @@ func sysctlString(_ name: String) -> String? {
     return String(decoding: buffer.dropLast().map { UInt8(bitPattern: $0) }, as: UTF8.self)
 }
 
-/// The short hash of HEAD in the repository at `directory`, or "unknown".
 func gitShortCommit(in directory: URL) -> String {
     let process = Process()
     process.executableURL = URL(filePath: "/usr/bin/git")

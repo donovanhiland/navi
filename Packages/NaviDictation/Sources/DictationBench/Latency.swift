@@ -2,8 +2,6 @@ import Foundation
 import DictationEval
 import NaviDictation
 
-/// `--latency`: times each step after the release for dictations of different lengths.
-/// Each text is spoken with `say`, so the clips run from a few seconds to over a minute.
 enum Latency {
     static let texts: [(name: String, text: String)] = [
         ("short", "Can you send me the deck before the meeting tomorrow?"),
@@ -65,7 +63,6 @@ enum Latency {
                 cleaned = await DictationPipeline.clean(heard, with: .apple)
                 cleanupTimes.append(milliseconds(since: start))
             }
-            // Live: the clip plays at real speed, so passes run while it "talks". Once is enough.
             let live = try await DictationPipeline.dictateLive(file: file)
             let paused = try await DictationPipeline.dictateLive(file: file, pause: 0.5)
             let speech = median(speechTimes)

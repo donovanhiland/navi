@@ -3,34 +3,24 @@ import Foundation
 import Observation
 import os
 
-/// The shared history of all captures. Features add items here; the history UI reads from here.
-///
-/// Order: pinned items first, then newest first. Unpinned items above `limit` are dropped.
-/// Items persist as `history.json` plus a `files/` folder inside `directory`.
 @MainActor
 @Observable
 public final class Inbox {
     public private(set) var items: [CaptureItem] = [] {
         didSet { itemsVersion &+= 1 }
     }
-    /// Goes up on every change to `items`. Not observed: read `items` to observe a change.
     @ObservationIgnored public private(set) var itemsVersion = 0
     public let directory: URL
     public var limit: Int
 
     @ObservationIgnored private let writer: HistoryWriter
-    /// Files of removed items, handed to the writer with the next save so they go after the JSON.
     @ObservationIgnored private var doomedFiles: [URL] = []
     @ObservationIgnored private var searchCache = SearchCache()
-    /// How long one search may spend building missing search keys; items still without one are left out.
     @ObservationIgnored var searchBudget: Duration = .milliseconds(6)
-    /// Changes when the background build installs keys, so a search view refreshes.
     public private(set) var searchKeysVersion = 0
-    /// Items the last `search` left out because their keys were not built in time.
     @ObservationIgnored public private(set) var deferredSearchItems = 0
     @ObservationIgnored private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Inbox")
 
-    /// `~/Library/Application Support/Navi`. The test app, Navi Dev, keeps its own history in "Navi Dev".
     public static var defaultDirectory: URL {
         let name = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? "Navi Dev" : "Navi"
         return URL.applicationSupportDirectory.appending(path: name, directoryHint: .isDirectory)
@@ -40,7 +30,6 @@ public final class Inbox {
         self.init(directory: directory, limit: limit, beforeDeleting: nil)
     }
 
-    /// `beforeDeleting` is a test seam: it runs on the writer queue after a snapshot is written, before its deletions.
     init(directory: URL, limit: Int, beforeDeleting: (@Sendable () -> Void)?) {
         self.directory = directory
         self.limit = limit
@@ -49,15 +38,10 @@ public final class Inbox {
         warmSearch(items)
     }
 
-    /// Blocks until the latest history is on disk. Call it on quit.
     public func flush() {
         writer.flush()
     }
 
-    // MARK: Adding
-
-    /// Adds text. Blank text is ignored. Text that is already in the history moves to the top
-    /// and its copy count goes up.
     @discardableResult
     public func add(
         text: String, kind: CaptureKind = .text, sourceApp: String? = nil, sourceBundleID: String? = nil, now: Date = .now
@@ -73,9 +57,6 @@ public final class Inbox {
         return item
     }
 
-    /// Adds file content, such as a PNG. The same content that is already in the history moves to the top,
-    /// unless `deduplicate` is false. Captures pass false: each shot gets its own item, so its markup and
-    /// file never belong to an older shot of the same pixels.
     @discardableResult
     public func add(
         fileData: Data, fileExtension: String, kind: CaptureKind,
@@ -100,9 +81,6 @@ public final class Inbox {
         return item
     }
 
-    // MARK: Changing
-
-    /// Replaces the file content of an item, for example after markup. The item keeps its place.
     @discardableResult
     public func updateFile(_ id: UUID, data: Data) -> Bool {
         guard let index = items.firstIndex(where: { $0.id == id }),
@@ -119,7 +97,6 @@ public final class Inbox {
         return true
     }
 
-    /// Moves an item to the top of its group (pinned or unpinned). Used after a paste.
     public func touch(_ id: UUID, now: Date = .now) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         items[index].lastUsedAt = now
@@ -145,10 +122,6 @@ public final class Inbox {
         save()
     }
 
-    // MARK: Reading
-
-    /// Items that match `query`, in display order. An empty query returns all items.
-    /// Matching ignores case, accents and character width, over text and source app name.
     public func search(_ query: String) -> [CaptureItem] {
         _ = searchKeysVersion
         let items = self.items
@@ -159,10 +132,8 @@ public final class Inbox {
         return found.items
     }
 
-    /// True once every item's search key is built (see `deferredSearchItems`).
     public var isSearchReady: Bool { searchCache.covers(items) }
 
-    /// The item's file content, or nil when the item has no file or it cannot be read.
     public func fileData(for id: UUID) -> Data? {
         guard let item = items.first(where: { $0.id == id }), let url = fileURL(for: item) else { return nil }
         return try? Data(contentsOf: url)
@@ -172,17 +143,13 @@ public final class Inbox {
         item.fileName.map { filesDirectory.appending(path: $0) }
     }
 
-    /// A PNG preview for items whose file is not an image, such as a recording. It may not exist.
     public func previewURL(for id: UUID) -> URL {
         filesDirectory.appending(path: "\(id.uuidString).preview.png")
     }
 
-    /// Folder for an item's editable markup (`<id>.navi`). It may not exist yet.
     public func markupURL(for id: UUID) -> URL {
         filesDirectory.appending(path: "\(id.uuidString).navi", directoryHint: .isDirectory)
     }
-
-    // MARK: Private
 
     private var historyURL: URL { directory.appending(path: "history.json") }
     private var filesDirectory: URL { directory.appending(path: "files", directoryHint: .isDirectory) }
@@ -197,10 +164,8 @@ public final class Inbox {
     }
 
     private func insert(_ item: CaptureItem) {
-        // A new item is unpinned and normally newest, so an ordered insert replaces the full sort.
         let index = items.firstIndex { !$0.pinned && $0.lastUsedAt < item.lastUsedAt } ?? items.count
         items.insert(item, at: index)
-        // A big text is folded in the background; a search before then leaves it out and counts it as deferred.
         if (item.text?.utf8.count ?? 0) <= Self.inlineKeyLimit {
             searchCache.prepare(item)
         } else {
@@ -245,7 +210,6 @@ public final class Inbox {
         }
     }
 
-    /// Every item that leaves the history goes through here: its search key goes now, its files after the next save.
     private func discard(_ item: CaptureItem) {
         searchCache.remove(item.id)
         doomedFiles.append(markupURL(for: item.id))
@@ -253,14 +217,12 @@ public final class Inbox {
         if let url = fileURL(for: item) { doomedFiles.append(url) }
     }
 
-    /// Texts up to this many UTF-8 bytes get their search key when added. Folding 16 KB of non-Latin text takes under 1 ms.
     nonisolated static let inlineKeyLimit = 16 * 1024
 
     private func warmSearch(_ items: [CaptureItem]) {
         let snapshot = items.map { ($0.id, $0.text, $0.sourceApp) }
         guard !snapshot.isEmpty else { return }
         Task.detached(priority: .utility) { [weak self] in
-            // In chunks, so results fill in as the build goes and a closed inbox stops it early.
             let chunk = 500
             var start = 0
             while start < snapshot.count {

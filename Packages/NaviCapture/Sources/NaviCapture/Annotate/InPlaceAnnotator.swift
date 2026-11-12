@@ -4,38 +4,27 @@ import NaviCore
 import SwiftUI
 import os
 
-/// Edit after capture. The captured area stays where it was on the frozen, dimmed screen, so it
-/// still looks like a screenshot in progress, and it becomes the markup canvas. The toolbar floats
-/// beside the area. No window, no title bar. Return copies the marked-up shot, ⌘S saves it, Stash
-/// only keeps it in the history; Esc cancels.
 @MainActor
 final class InPlaceAnnotator {
-    /// What to do with the marked-up shot.
     enum Action { case copy, save, stash }
 
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Capture")
     private let model: AnnotateModel
     private let screen: NSScreen
-    /// The area in display-local points with the origin at the top left.
     private let area: CGRect
-    /// The frozen screen behind the area. Nil when it is missing: then the dim covers the live screen.
     private let backdrop: CGImage?
     private var window: InPlaceWindow?
     private var keyMonitor: Any?
     private var resignObserver: NSObjectProtocol?
     private var activeObserver: NSObjectProtocol?
-    /// Return and Esc as Carbon hot keys until Navi is the active app. macOS may refuse
-    /// `NSApp.activate()`, and then no key event reaches the window or the local monitor.
     private var fallbackKeys: [HotKey] = []
     private var colorPanelLevel: NSWindow.Level?
-    /// Gets the action and the result, or nil on Esc or Cancel. Runs once.
     private var onFinish: (((Action, AnnotateEditor.Result)?) -> Void)?
 
     init(
         captured: CapturedImage, backdrop: CGImage?, screen: NSScreen, area: CGRect,
         onFinish: @escaping ((Action, AnnotateEditor.Result)?) -> Void
     ) {
-        // The shot is the frozen screen's pixels under the area, so its frame can be changed later.
         let source = CGRect(
             x: (area.minX * captured.scale).rounded(), y: (area.minY * captured.scale).rounded(),
             width: CGFloat(captured.image.width), height: CGFloat(captured.image.height)
@@ -59,12 +48,10 @@ final class InPlaceAnnotator {
             onStash: { [weak self] in self?.finish(.stash) },
             onCancel: { [weak self] in self?.finish(nil) }
         ))
-        // The window is the size of the screen. Do not let SwiftUI resize it to fit the content.
         hosting.sizingOptions = []
         window.contentView = hosting
         self.window = window
         watchKeys()
-        // The color panel floats at a low level. Lift it above the overlay while it is open.
         colorPanelLevel = NSColorPanel.shared.level
         NSColorPanel.shared.level = InPlaceWindow.overlayLevel + 1
         if !NSApp.isActive { registerFallbackKeys() }
@@ -75,7 +62,6 @@ final class InPlaceAnnotator {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.releaseFallbackKeys() }
         }
-        // ⌘Tab or a click in another app would leave the dim up with capture locked. Cancel instead.
         resignObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -83,7 +69,6 @@ final class InPlaceAnnotator {
         }
     }
 
-    /// Nil cancels.
     private func finish(_ action: Action?) {
         guard let onFinish else { return }
         self.onFinish = nil
@@ -96,7 +81,6 @@ final class InPlaceAnnotator {
         releaseFallbackKeys()
         if let colorPanelLevel { NSColorPanel.shared.level = colorPanelLevel }
         colorPanelLevel = nil
-        // Cancel: just go away, with no macOS close animation.
         if action == nil { window?.animationBehavior = .none }
         window?.orderOut(nil)
         window = nil
@@ -113,8 +97,6 @@ final class InPlaceAnnotator {
         onFinish((action, AnnotateEditor.Result(flat: flat, base: model.base, document: model.document, pointSize: model.pointSize)))
     }
 
-    /// Return copies and Esc cancels, unless text is being typed or a crop is open: then they end
-    /// that first. Every other markup key works as in the editor window.
     private func watchKeys() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { () -> Bool in
@@ -134,7 +116,6 @@ final class InPlaceAnnotator {
         ].compactMap { $0 }
     }
 
-    /// Once Navi is active, the local key monitor has the keys and other apps get theirs back.
     private func releaseFallbackKeys() {
         for key in fallbackKeys { key.unregister() }
         fallbackKeys = []
@@ -168,10 +149,7 @@ final class InPlaceAnnotator {
     }
 }
 
-/// A borderless window over one whole screen, above other apps.
 private final class InPlaceWindow: NSWindow {
-    /// Above the menu bar and Dock, but at menu level, so the toolbar's menus and popovers show
-    /// above the overlay.
     static let overlayLevel = NSWindow.Level.popUpMenu
 
     init(screen: NSScreen) {
@@ -190,7 +168,6 @@ private final class InPlaceWindow: NSWindow {
     override var canBecomeMain: Bool { true }
 }
 
-/// The frozen screen, dimmed except the area, the canvas on the area, and the floating toolbar.
 struct InPlaceAnnotateView: View {
     @Bindable var model: AnnotateModel
     let backdrop: CGImage?
@@ -199,26 +176,20 @@ struct InPlaceAnnotateView: View {
     let onSave: () -> Void
     let onStash: () -> Void
     let onCancel: () -> Void
-    /// Fixes how far the frame marks are shown, instead of following the pointer. For the
-    /// recorded demo and snapshots, which have no real pointer.
     var revealOverride: CGFloat?
     @State private var toolbarSize = CGSize(width: 900, height: 44)
-    /// See `FrameAdjuster`: 0 at rest, 1 while the pointer is near the frame or dragging it.
     @State private var reveal: CGFloat = 0
     @State private var pointer: CGPoint?
     @State private var isDraggingFrame = false
 
     static let space = "InPlaceScreen"
     private static let dim = Color.black.opacity(0.42)
-    /// How close the pointer must be to the frame line for the brackets to grow.
     private static let revealDistance: CGFloat = 24
     private static let toolbarGap: CGFloat = 10
     private static let screenMargin: CGFloat = 12
 
     var body: some View {
         GeometryReader { proxy in
-            // A crop keeps the kept pixels where they are on screen; rotate and resize grow or
-            // shrink the canvas from its top-left corner.
             let hole = model.placement?.frame(pointSize: model.pointSize) ?? CGRect(origin: area.origin, size: model.pointSize)
             let toolbarOrigin = CaptureGeometry.toolbarOrigin(
                 below: hole, toolbar: toolbarSize, in: proxy.size, gap: Self.toolbarGap, margin: Self.screenMargin
@@ -267,7 +238,6 @@ struct InPlaceAnnotateView: View {
         .frame(width: screen.width, height: screen.height, alignment: .topLeading)
     }
 
-    /// Grows the brackets while the pointer is near the frame line or a drag is on.
     private func updateReveal(hole: CGRect) {
         let near = pointer.map { Self.isNearFrame($0, hole: hole) } ?? false
         let target: CGFloat = isDraggingFrame || near ? 1 : 0
@@ -275,14 +245,12 @@ struct InPlaceAnnotateView: View {
         withAnimation(.easeOut(duration: 0.18)) { reveal = target }
     }
 
-    /// Within `revealDistance` of the frame line, or over the move tab.
     static func isNearFrame(_ point: CGPoint, hole: CGRect) -> Bool {
         let nearLine = hole.insetBy(dx: -revealDistance, dy: -revealDistance).contains(point)
             && !hole.insetBy(dx: revealDistance, dy: revealDistance).contains(point)
         return nearLine || FrameAdjuster.moveTabZone(of: hole).insetBy(dx: -4, dy: -4).contains(point)
     }
 
-    /// Clicks on the dim do nothing, so a stray click cannot lose the marks.
     private func dim(around hole: CGRect, in size: CGSize) -> some View {
         Rectangle()
             .fill(Self.dim)

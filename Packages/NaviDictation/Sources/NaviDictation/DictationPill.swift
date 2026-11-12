@@ -2,7 +2,6 @@ import AppKit
 import Observation
 import SwiftUI
 
-/// What the pill shows.
 @MainActor
 @Observable
 final class PillModel {
@@ -15,7 +14,6 @@ final class PillModel {
 
     var phase: Phase = .listening
     var isLocked = false
-    /// Newest level last. Each value is 0...1.
     var levels: [Float] = Array(repeating: 0, count: PillModel.barCount)
 
     func push(level: Float) {
@@ -79,8 +77,6 @@ private struct Waveform: View {
     }
 }
 
-/// A small floating pill at the bottom center of the screen with the mouse. It never takes focus and
-/// ignores the mouse, so the front app keeps typing focus.
 @MainActor
 final class DictationPill {
     let model = PillModel()
@@ -106,7 +102,6 @@ final class DictationPill {
             panel.animator().alphaValue = 0
         }, completionHandler: { [weak panel] in
             MainActor.assumeIsolated {
-                // A new session may have shown the pill again during the fade.
                 if let panel, panel.alphaValue == 0 { panel.orderOut(nil) }
             }
         })

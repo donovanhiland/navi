@@ -1,18 +1,11 @@
 import AppKit
 
-/// The spotlight on the window under the cursor in area mode: the rest of the screen stays dimmed,
-/// the window shows clear with a purple ring and glow, and a label names its app and pixel size.
-/// The highlight glides from one window to the next and fades in and out.
 @MainActor
 final class WindowHighlight {
-    /// Called on every animation frame, so the owner can redraw.
     var onChange: (() -> Void)?
 
-    /// The frame drawn now, in view coordinates. Nil when nothing is highlighted.
     private(set) var frame: CGRect?
-    /// 0 hidden, 1 fully shown.
     private(set) var alpha: CGFloat = 0
-    /// The window the highlight is on or moving to.
     private(set) var window: OnScreenWindow?
     private var icon: NSImage?
 
@@ -27,7 +20,6 @@ final class WindowHighlight {
     private static let cornerRadius: CGFloat = 12
     static let purple = NSColor(srgbRed: 0.545, green: 0.361, blue: 0.965, alpha: 1)
 
-    /// Moves the highlight to `window` (with `rect` in view coordinates), or hides it.
     func show(_ window: OnScreenWindow?, rect: CGRect?) {
         guard window?.id != self.window?.id else { return }
         self.window = window
@@ -47,7 +39,6 @@ final class WindowHighlight {
         startTimer()
     }
 
-    /// Hides at once, with no fade (a drag started, or the overlay is closing).
     func hideNow() {
         timer?.invalidate()
         timer = nil
@@ -64,7 +55,6 @@ final class WindowHighlight {
         let timer = Timer(timeInterval: 1.0 / 120.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
         }
-        // Common modes, so the animation keeps running while the mouse button is down.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
@@ -82,15 +72,11 @@ final class WindowHighlight {
         onChange?()
     }
 
-    // MARK: Drawing
-
-    /// The rounded hole the dimming leaves for the highlighted window.
     var holePath: CGPath? {
         guard let frame, alpha > 0 else { return nil }
         return CGPath(roundedRect: frame, cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
     }
 
-    /// Dims the screen around the window. Inside the window the dimming fades out with `alpha`.
     func drawDim(in context: CGContext, bounds: CGRect, color: NSColor) {
         context.saveGState()
         context.setFillColor(color.cgColor)
@@ -105,7 +91,6 @@ final class WindowHighlight {
         context.restoreGState()
     }
 
-    /// The purple ring, its soft halo, and the glow around the window.
     func drawRing(in context: CGContext) {
         guard let frame, alpha > 0 else { return }
         let radius = Self.cornerRadius
@@ -125,7 +110,6 @@ final class WindowHighlight {
         context.restoreGState()
     }
 
-    /// App icon, app name, and the window's size in pixels, near the top of the window.
     func drawLabel(in bounds: CGRect, scale: CGFloat) {
         guard let frame, let window, alpha > 0 else { return }
         let nameAttributes: [NSAttributedString.Key: Any] = [
@@ -146,7 +130,6 @@ final class WindowHighlight {
         let width = padding + (icon == nil ? 0 : iconSide + gap) + nameSize.width + gap + sizeSize.width + padding
         let height: CGFloat = 30
 
-        // Near the top of the visible part of the window, kept on screen.
         let visible = frame.intersection(bounds)
         guard !visible.isNull, visible.height > height + 8, visible.width > width + 8 else { return }
         let origin = CGPoint(x: (visible.midX - width / 2).rounded(), y: (visible.maxY - 14 - height).rounded())

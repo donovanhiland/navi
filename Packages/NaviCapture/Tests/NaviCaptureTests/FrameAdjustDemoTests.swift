@@ -4,13 +4,6 @@ import Testing
 
 @testable import NaviCapture
 
-/// Records moving and resizing the frame in edit after capture, as PNG frames for the pull
-/// request video. It draws the real `InPlaceAnnotateView` off screen over a stand-in screen,
-/// moves a drawn cursor, and drives the frame through the same model calls the drag makes
-/// (`beginReframe`, `reframe`). The brackets' reveal follows the same rule as the live view.
-/// Off by default. Run:
-/// NAVI_FRAME_DEMO=<folder> swift test --filter FrameAdjustDemo
-/// then: ffmpeg -framerate 30 -i <folder>/frame-%04d.png …
 @MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["NAVI_FRAME_DEMO"] != nil))
 struct FrameAdjustDemoTests {
@@ -24,7 +17,6 @@ struct FrameAdjustDemoTests {
         case grip
     }
 
-    /// One part of the demo: the cursor goes to `to` over `seconds`, dragging or not.
     struct Step {
         let to: CGPoint
         let seconds: Double
@@ -62,7 +54,6 @@ struct FrameAdjustDemoTests {
         view.appearance = NSAppearance(named: .darkAqua)
         view.frame = CGRect(origin: .zero, size: Self.screen)
         view.layoutSubtreeIfNeeded()
-        // The toolbar measures itself on the first pass and moves into place on the next.
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
 
         var reveal: CGFloat = 0
@@ -102,7 +93,6 @@ struct FrameAdjustDemoTests {
         return false
     }
 
-    /// The live view's rule: grow while near the line or the move tab, or dragging, over 0.18 s.
     private static func nextReveal(_ reveal: CGFloat, hole: CGRect, cursor: CGPoint, dragging: Bool) -> CGFloat {
         let near = InPlaceAnnotateView.isNearFrame(cursor, hole: hole)
         let target: CGFloat = dragging || near ? 1 : 0

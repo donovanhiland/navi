@@ -3,13 +3,6 @@ import Testing
 
 @testable import NaviCapture
 
-/// Records an area drag that starts just outside the "D" of "Domain name", as PNG frames for the
-/// pull request video. It drives the real selection overlay with mouse events over a drawn
-/// desktop, then shows the shot the overlay cropped. A window hidden behind the front window has
-/// edges just inside the "D", the case where the old snapping pulled the corner into the letter.
-/// Off by default. Run:
-/// NAVI_ACCURACY_DEMO=<folder> swift test --filter SelectionAccuracyDemo
-/// then: ffmpeg -framerate 30 -i <folder>/frame-%04d.png …
 @MainActor
 @Suite(.enabled(if: !NSScreen.screens.isEmpty && ProcessInfo.processInfo.environment["NAVI_ACCURACY_DEMO"] != nil))
 struct SelectionAccuracyDemoTests {
@@ -28,7 +21,6 @@ struct SelectionAccuracyDemoTests {
         let letterWidth = "D".size(withAttributes: [.font: Self.font]).width
         let letter = try #require(Self.inkBounds(of: desktop, maxX: Self.textOrigin.x + letterWidth))
 
-        // Hidden behind the front window, with its left and top edges 2 pt inside the "D".
         let hidden = CGRect(x: letter.minX + 2, y: letter.maxY - 2 - 200, width: 400, height: 200)
         let screen = NSScreen.screens[0]
         let origin = screen.frame.origin
@@ -54,7 +46,6 @@ struct SelectionAccuracyDemoTests {
         }
         func frame() throws {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0 / 60.0))
-            // The overlay is clear over the live screen, so put the desktop under it.
             let overlay = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: overlay)
             let rep = try Self.canvas()
@@ -106,7 +97,6 @@ struct SelectionAccuracyDemoTests {
         )!
     }
 
-    /// An empty 2x frame, 1440 × 900 points.
     private static func canvas() throws -> NSBitmapImageRep {
         let rep = try #require(NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: Int(size.width * scale), pixelsHigh: Int(size.height * scale),
@@ -117,7 +107,6 @@ struct SelectionAccuracyDemoTests {
         return rep
     }
 
-    /// The cropped shot, 2x with sharp pixels, on a dark screen. Centered where the video is cut.
     private static func resultFrame(crop: CGImage) throws -> NSBitmapImageRep {
         let rep = try canvas()
         NSGraphicsContext.saveGraphicsState()
@@ -158,7 +147,6 @@ struct SelectionAccuracyDemoTests {
         path.stroke()
     }
 
-    /// A desktop at 2x: a gradient and one white window with "Domain name" in it.
     private static func desktop() -> CGImage {
         let width = Int(size.width * scale), height = Int(size.height * scale)
         let context = CGContext(
@@ -182,7 +170,6 @@ struct SelectionAccuracyDemoTests {
         return context.makeImage()!
     }
 
-    /// The dark pixels of the text left of `maxX` (points), in view points (origin bottom left).
     private static func inkBounds(of image: CGImage, maxX limit: CGFloat = .infinity) -> CGRect? {
         let width = image.width, height = image.height
         var data = [UInt8](repeating: 0, count: width * height * 4)
@@ -206,7 +193,6 @@ struct SelectionAccuracyDemoTests {
             }
         }
         guard maxX >= 0 else { return nil }
-        // Memory rows go top to bottom. Pixel edges to points, origin bottom left.
         return CGRect(
             x: CGFloat(minX) / scale, y: CGFloat(height - 1 - maxRow) / scale,
             width: CGFloat(maxX + 1 - minX) / scale, height: CGFloat(maxRow + 1 - minRow) / scale

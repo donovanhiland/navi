@@ -10,14 +10,11 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../NaviCore"),
-        // Parakeet speech-to-text on the Neural Engine (Apache-2.0). Hex uses it too.
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.18.2"),
     ],
     targets: [
         .target(name: "NaviDictation", dependencies: ["NaviCore", .product(name: "FluidAudio", package: "FluidAudio")]),
-        /// Scoring for the dictation benchmark. Pure, so tests can check it.
         .target(name: "DictationEval"),
-        /// `swift run dictation-bench`: scores cleanup engines (and speech, with --audio) on Bench/cases.json.
         .executableTarget(name: "DictationBench", dependencies: ["NaviDictation", "DictationEval"]),
         .testTarget(name: "NaviDictationTests", dependencies: ["NaviDictation"]),
         .testTarget(name: "DictationEvalTests", dependencies: ["DictationEval"]),

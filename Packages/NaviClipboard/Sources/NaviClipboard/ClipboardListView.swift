@@ -1,8 +1,6 @@
 import NaviCore
 import SwiftUI
 
-/// The history panel, styled like a macOS menu: search header, item rows, and a footer with actions.
-/// Keyboard keys (arrows, Return, Esc, shortcuts) are handled by `ClipboardPanelController`.
 struct ClipboardListView: View {
     @Bindable var model: ClipboardModel
     let onChoose: (CaptureItem) -> Void
@@ -85,19 +83,15 @@ struct ClipboardListView: View {
     }
 }
 
-/// Scrolls the list: to the selected row when the keyboard moved it off screen, and to the top on each open.
-/// It reads the selection here, so a selection change redraws this view and the rows, not the whole list.
 private struct SelectionFollower: View {
     let model: ClipboardModel
     let results: [CaptureItem]
     let proxy: ScrollViewProxy
-    /// The padded list. Scrolling to its top or bottom keeps the padding that scrolling to a row would cut off.
     static let listID = "list"
 
     var body: some View {
         Color.clear
             .onChange(of: model.selection) { _, selection in
-                // `scrollTo` is the costly part of a selection step, so skip it for a row that is in view.
                 guard !model.selectedByHover, let anchor = model.scrollAnchor(for: selection, in: results) else { return }
                 if selection == 0 || selection == results.count - 1 {
                     proxy.scrollTo(Self.listID, anchor: anchor)
@@ -109,7 +103,6 @@ private struct SelectionFollower: View {
     }
 }
 
-/// Reads the selection, so every visible row re-runs this small body on a selection change.
 private struct ClipboardRow: View {
     let model: ClipboardModel
     let item: CaptureItem
@@ -121,7 +114,6 @@ private struct ClipboardRow: View {
     }
 }
 
-/// The row itself. Equatable, so only the rows whose selected state changed are drawn again.
 private struct ClipboardRowContent: View, @MainActor Equatable {
     let model: ClipboardModel
     let item: CaptureItem
@@ -158,7 +150,6 @@ private struct ClipboardRowContent: View, @MainActor Equatable {
 
     @ViewBuilder private var content: some View {
         if item.fileName != nil {
-            // Empty until the thumbnail is decoded in the background.
             if let image = model.cachedThumbnail(for: item) ?? loaded {
                 Image(nsImage: image)
                     .resizable()
@@ -172,7 +163,6 @@ private struct ClipboardRowContent: View, @MainActor Equatable {
         }
     }
 
-    /// One line of text. Line breaks show as ⏎, like Maccy.
     static func preview(_ text: String) -> String {
         String(text.prefix(400))
             .replacingOccurrences(of: "\r\n", with: "⏎")
@@ -203,7 +193,6 @@ private struct FooterRow: View {
     }
 }
 
-/// The detail card shown next to the selected row: full content, source app, times, and copy count.
 struct ClipboardPreview: View {
     let item: CaptureItem
     let image: NSImage?

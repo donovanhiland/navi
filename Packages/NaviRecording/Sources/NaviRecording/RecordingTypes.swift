@@ -1,25 +1,16 @@
 import CoreGraphics
 import Foundation
 
-/// What to record. The app picks the region with its own overlay and passes it in.
 public enum RecordingRegion: Sendable, Equatable {
-    /// A whole display.
     case display(CGDirectDisplayID)
-    /// A rectangle of a display, in display-local points. The origin is the top left corner.
     case area(CGDirectDisplayID, CGRect)
-    /// One window alone. Nothing behind it gets in, and Navi's camera and overlays do not show.
     case window(CGWindowID)
 }
 
-/// A finished recording.
 public struct RecordingResult: Sendable, Equatable {
-    /// The file to use: the GIF when `isGIF` is true, otherwise the MP4.
     public let url: URL
     public let isGIF: Bool
-    /// The MP4 the recording was made as. For a video result it equals `url`.
-    /// Keep it to offer an MP4 or GIF switch, or to trim.
     public let videoURL: URL
-    /// Length in seconds.
     public let duration: TimeInterval
 
     public init(url: URL, isGIF: Bool, videoURL: URL, duration: TimeInterval) {
@@ -30,7 +21,6 @@ public struct RecordingResult: Sendable, Equatable {
     }
 }
 
-/// The choices in the record bar.
 public struct RecordingOptions: Sendable, Equatable {
     public var framesPerSecond: Int = 30
     public var microphone = false

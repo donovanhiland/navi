@@ -3,7 +3,6 @@ import Testing
 
 @testable import NaviCapture
 
-/// The text tool and the one-key tool shortcuts in the markup editor.
 @MainActor
 @Suite struct AnnotateTextTests {
     private func makeModel() throws -> AnnotateModel {
@@ -117,8 +116,6 @@ import Testing
         #expect(AnnotationTool.forShortcut("ab") == nil)
     }
 
-    /// The text must not change look when the box closes: the preview while typing is the same
-    /// mark that gets saved.
     @Test func typedTextLooksTheSameBeforeAndAfterCommit() throws {
         let model = try makeModel()
         type("Same", at: CGPoint(x: 40, y: 60), in: model)

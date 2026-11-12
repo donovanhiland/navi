@@ -6,13 +6,10 @@ extension NSScreen {
     }
 }
 
-/// Where a `RecordingRegion` sits on screen right now.
 struct ResolvedRegion {
     var displayID: CGDirectDisplayID
-    /// The display's frame in Cocoa global coordinates.
     var displayFrame: CGRect
     var scale: CGFloat
-    /// The region in Cocoa global coordinates.
     var frame: CGRect
 
     @MainActor
@@ -41,7 +38,6 @@ struct ResolvedRegion {
         NSScreen.screens.first { $0.recordingDisplayID == id }
     }
 
-    /// A window's frame in Cocoa global coordinates.
     @MainActor
     private static func windowFrame(_ id: CGWindowID) -> CGRect? {
         guard let list = CGWindowListCopyWindowInfo([.optionIncludingWindow], id) as? [[String: Any]],

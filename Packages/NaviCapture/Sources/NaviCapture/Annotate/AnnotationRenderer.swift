@@ -2,7 +2,6 @@ import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
-/// Draws the marks on top of the base image. The editor and the export use the same code.
 @MainActor
 final class AnnotationRenderer {
     private let ciContext = CIContext()
@@ -10,14 +9,12 @@ final class AnnotationRenderer {
     private var blurred: CGImage?
     private var pixelated: CGImage?
 
-    /// Draws `marks` on `base`, plus an optional selection outline.
     func render(base: CGImage, marks: [Annotation], selection: UUID? = nil) -> CGImage? {
         let width = base.width, height = base.height
         guard let context = CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        // Work in image pixels with the origin at the top left, like the marks.
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
         let full = CGRect(x: 0, y: 0, width: width, height: height)
@@ -37,7 +34,6 @@ final class AnnotationRenderer {
         if !spots.isEmpty {
             context.saveGState()
             context.addRect(full)
-            // A rounded box, like the plan's prototype.
             for spot in spots {
                 let rect = CaptureGeometry.rect(from: spot.start, to: spot.end)
                 let radius = min(12 * CGFloat(spot.lineWidth) / 4, rect.width / 2, rect.height / 2)
@@ -59,16 +55,11 @@ final class AnnotationRenderer {
         return context.makeImage()
     }
 
-    // MARK: Selection
-
-    /// A dashed outline (on the box itself for box marks, so you grab what you see) and
-    /// white handles with a blue ring: big ones at corners and ends, small ones at edge middles.
     private func drawSelection(of mark: Annotation, imageWidth: CGFloat, context: CGContext) {
         let blue = CGColor(srgbRed: 0.2, green: 0.55, blue: 1, alpha: 1)
         let line = max(2, imageWidth / 800)
         context.saveGState()
         context.setLineWidth(line)
-        // White under blue, so the dashes show on dark and light images.
         context.setStrokeColor(.white)
         let outline = mark.isBox ? mark.box : mark.bounds.insetBy(dx: -6, dy: -6)
         if mark.kind != .arrow, mark.kind != .line {
@@ -89,8 +80,6 @@ final class AnnotationRenderer {
         }
         context.restoreGState()
     }
-
-    // MARK: Marks
 
     private func draw(_ mark: Annotation, context: CGContext) {
         let width = CGFloat(mark.lineWidth)
@@ -155,7 +144,7 @@ final class AnnotationRenderer {
             Self.draw(image, in: rect, context: context)
             context.restoreGState()
         case .blur, .pixelate, .spotlight:
-            break // Drawn before the marks.
+            break
         }
     }
 
@@ -187,8 +176,6 @@ final class AnnotationRenderer {
         context.fillPath()
     }
 
-    // MARK: Effects
-
     private func prepareEffects(for base: CGImage) {
         guard effectsBase !== base else { return }
         effectsBase = base
@@ -207,7 +194,6 @@ final class AnnotationRenderer {
         pixelated = pixellate.outputImage.flatMap { ciContext.createCGImage($0.cropped(to: extent), from: extent) }
     }
 
-    /// Draws an image right side up in a context whose origin is at the top left.
     nonisolated static func draw(_ image: CGImage, in rect: CGRect, context: CGContext) {
         context.saveGState()
         context.translateBy(x: rect.minX, y: rect.maxY)
@@ -217,7 +203,6 @@ final class AnnotationRenderer {
     }
 }
 
-/// Changes to the base image: rotate, flip, crop, resize.
 enum ImageOps {
     static func apply(_ edit: ImageEdit, to image: CGImage) -> CGImage? {
         let size = CGSize(width: image.width, height: image.height)
@@ -231,7 +216,6 @@ enum ImageOps {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
         context.interpolationQuality = .high
-        // The transform is for top-left origin points. Wrap it in flips so it works in Core Graphics space.
         context.translateBy(x: 0, y: newSize.height)
         context.scaleBy(x: 1, y: -1)
         context.concatenate(transform)

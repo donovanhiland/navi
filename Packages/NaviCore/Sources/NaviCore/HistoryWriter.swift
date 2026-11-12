@@ -1,9 +1,6 @@
 import Foundation
 import os
 
-/// Encodes and writes `history.json` off the main actor. The newest snapshot wins on one serial queue.
-/// Files of removed items are deleted only after the snapshot that drops them is written, so a crash leaves an
-/// orphan, never a dangling reference.
 final class HistoryWriter: Sendable {
     private struct State {
         var pending: [CaptureItem]?
@@ -24,7 +21,6 @@ final class HistoryWriter: Sendable {
         self.beforeDeleting = beforeDeleting
     }
 
-    /// Hands over a snapshot to write and the files to delete once it is on disk. Returns at once.
     func write(_ items: [CaptureItem], deleting files: [URL] = []) {
         let needsDrain = state.withLock { state in
             state.pending = items
@@ -35,7 +31,6 @@ final class HistoryWriter: Sendable {
         if needsDrain { queue.async { self.drain() } }
     }
 
-    /// Blocks until every snapshot handed over so far is written.
     func flush() {
         queue.sync {}
     }
@@ -51,7 +46,6 @@ final class HistoryWriter: Sendable {
         }) {
             let saved = persist(items)
             beforeDeleting?()
-            // If the write failed, the old JSON may still reference these files: keep them for the next save.
             guard saved else {
                 state.withLock { $0.doomed = doomed + $0.doomed }
                 continue

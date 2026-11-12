@@ -1,8 +1,6 @@
 import AppKit
 import SwiftUI
 
-/// A capture floating on top of every window. Drag to move, scroll or drag an edge to resize.
-/// The right-click menu changes opacity and locks it so clicks go through.
 @MainActor
 final class PinBoard {
     private var pins: [PinPanel] = []
@@ -68,7 +66,6 @@ final class PinPanel: NSPanel {
         ignoresMouseEvents = locked
     }
 
-    /// Scroll to make the pin bigger or smaller.
     override func scrollWheel(with event: NSEvent) {
         let factor = 1 + event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.004 : 0.04)
         var frame = self.frame

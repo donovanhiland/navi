@@ -2,7 +2,6 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The markup editor window. `onDone` gets the flat image, the base image, and the marks.
 @MainActor
 final class AnnotateEditor: NSObject, NSWindowDelegate {
     struct Result {
@@ -57,8 +56,6 @@ final class AnnotateEditor: NSObject, NSWindowDelegate {
         window?.close()
     }
 
-    /// Markup keys (`AnnotateKeys`) through a local key monitor, which works even though Navi has
-    /// no Edit menu.
     private func watchKeys() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let handled = MainActor.assumeIsolated { () -> Bool in
@@ -93,7 +90,7 @@ struct AnnotateView: View {
     var body: some View {
         VStack(spacing: 0) {
             AnnotateToolbar(model: model, onDone: onDone, onCancel: onCancel)
-                .padding(.leading, 66) // room for the window buttons
+                .padding(.leading, 66)
             Divider()
             AnnotateCanvas(model: model, layout: .fitted)
                 .background(Color.black.opacity(0.2))
@@ -104,19 +101,13 @@ struct AnnotateView: View {
     }
 }
 
-/// The markup tools, style, undo, and the Cancel and Done buttons. The editor window puts it
-/// above the canvas; edit after capture floats it beside the area on the frozen screen.
 struct AnnotateToolbar: View {
     @Bindable var model: AnnotateModel
     let onDone: () -> Void
     let onCancel: () -> Void
     var doneTitle = "Done"
-    /// ⌘Return in the window. Nil: no shortcut, because the owner handles Return itself (edit
-    /// after capture, where Return must end typing first).
     var doneModifiers: EventModifiers? = .command
-    /// The small picture to drag into other apps. Off when a full-screen overlay covers them.
     var showsDragThumbnail = true
-    /// Edit after capture: Save (⌘S) to the save folder, and Stash to keep it in the history only.
     var onSave: (() -> Void)?
     var onStash: (() -> Void)?
 
@@ -125,8 +116,6 @@ struct AnnotateToolbar: View {
     ]
     private static let effectTools: [AnnotationTool] = [.blur, .pixelate, .spotlight, .crop]
 
-    /// One row when the window is wide enough. Otherwise two rows: tools on top, then style,
-    /// undo, and the actions. Nothing squishes or hides.
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 10) {
@@ -136,7 +125,6 @@ struct AnnotateToolbar: View {
                 Spacer(minLength: 16)
                 actions
             }
-            // Narrow: tools and the actions on top, style and undo below.
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     toolGroups
@@ -148,7 +136,6 @@ struct AnnotateToolbar: View {
                     historyGroup
                 }
             }
-            // Very narrow: the actions get their own row.
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) { toolGroups }
                 HStack(spacing: 10) {
@@ -247,7 +234,6 @@ struct AnnotateToolbar: View {
         .accessibilityHint(tool.help)
     }
 
-    /// A small picture of the marked-up shot. Drag it into any app to drop the image there.
     private var dragMe: some View {
         Group {
             if let image = model.rendered {
@@ -289,9 +275,6 @@ struct AnnotateToolbar: View {
     }
 }
 
-// MARK: - Toolbar parts
-
-/// A rounded group of toolbar buttons.
 private struct ToolGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -303,7 +286,6 @@ private struct ToolGroup<Content: View>: View {
     }
 }
 
-/// A 28 × 26 icon button. `isOn` shows it selected.
 private struct IconButton<Label: View>: View {
     enum Style { case accent, subtle }
 
@@ -337,7 +319,6 @@ private struct IconButton<Label: View>: View {
     }
 }
 
-/// A round swatch of the current color. Click for preset colors, any color, or the screen sampler.
 private struct ColorWell: View {
     @Bindable var model: AnnotateModel
     @State private var isOpen = false

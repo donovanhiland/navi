@@ -1,14 +1,3 @@
-// Checks Sparkle update signatures the same way Navi checks them before it installs an update.
-// It uses CryptoKit's Ed25519, so it does not trust Sparkle's own tools to check themselves.
-//
-//   swift scripts/sparkle-check.swift public-key <private-key-file>
-//       Prints the public key (base64) for a Sparkle private key file (base64 32-byte seed,
-//       as written by generate_keys -x). "-" reads the key from standard input.
-//   swift scripts/sparkle-check.swift verify-file <file> <signature> <public-key>
-//       Exits 0 when the signature (base64) is valid for the file.
-//   swift scripts/sparkle-check.swift verify-appcast <appcast.xml> <zip> <public-key> <version> <build> <url-prefix>
-//       Exits 0 when the feed has one item for <version> and <build>, its enclosure URL is
-//       <url-prefix>Navi.zip, its length matches the zip, and its signature is valid.
 import CryptoKit
 import Foundation
 

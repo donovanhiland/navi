@@ -1,7 +1,6 @@
 import AppKit
 import AVFoundation
 
-/// Camera and microphone permission.
 enum Permissions {
     static func microphone() async -> Bool {
         await authorize(.audio, pane: "Privacy_Microphone")
@@ -11,7 +10,6 @@ enum Permissions {
         await authorize(.video, pane: "Privacy_Camera")
     }
 
-    /// True when granted. Asks once when undecided. When denied, opens the matching System Settings pane.
     @MainActor
     private static func authorize(_ type: AVMediaType, pane: String) async -> Bool {
         switch AVCaptureDevice.authorizationStatus(for: type) {

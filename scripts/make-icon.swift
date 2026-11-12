@@ -1,6 +1,3 @@
-// Draws Navi's app icon: a rounded square with a deep blue-to-violet gradient,
-// white viewfinder corners (capture), and a sparkle in the middle (the menu bar symbol).
-// Run: swift scripts/make-icon.swift <out.png> [size]
 import AppKit
 
 let args = CommandLine.arguments
@@ -13,7 +10,6 @@ let context = CGContext(
     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
 )!
 
-// macOS icon grid: an 824 × 824 rounded square in a 1024 canvas, with a soft shadow.
 let tile = CGRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
 let tilePath = CGPath(roundedRect: tile, cornerWidth: 185 * s, cornerHeight: 185 * s, transform: nil)
 context.saveGState()
@@ -36,7 +32,6 @@ let gradient = CGGradient(
     locations: [0, 0.6, 1]
 )!
 context.drawLinearGradient(gradient, start: CGPoint(x: tile.minX, y: tile.maxY), end: CGPoint(x: tile.maxX, y: tile.minY), options: [])
-// A soft light from the top.
 let glow = CGGradient(
     colorsSpace: CGColorSpace(name: CGColorSpace.sRGB),
     colors: [CGColor(gray: 1, alpha: 0.22), CGColor(gray: 1, alpha: 0)] as CFArray, locations: [0, 1]
@@ -47,7 +42,6 @@ context.drawRadialGradient(
 )
 context.restoreGState()
 
-// Viewfinder corners.
 let frame = tile.insetBy(dx: 190 * s, dy: 190 * s)
 let arm = 120 * s
 context.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
@@ -64,7 +58,6 @@ for (corner, dx, dy) in [
 }
 context.strokePath()
 
-// A four-point sparkle in the middle, with a small one beside it.
 func sparkle(center: CGPoint, radius: CGFloat, waist: CGFloat) {
     let path = CGMutablePath()
     for i in 0 ..< 4 {

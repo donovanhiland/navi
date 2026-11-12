@@ -1,9 +1,6 @@
 import AVFoundation
 @preconcurrency import Speech
 
-/// Microphone and Speech Recognition permissions for dictation.
-///
-/// Accessibility (to type into the front app) is a separate permission that Navi already uses.
 public enum DictationPermissions {
     public enum Status: Sendable, Equatable {
         case notDetermined
@@ -27,16 +24,13 @@ public enum DictationPermissions {
         }
     }
 
-    /// True when both permissions are granted.
     public static var allGranted: Bool { microphone == .granted && speechRecognition == .granted }
 
-    /// Shows the macOS prompt for the microphone when the status is not decided yet.
     public static func requestMicrophone() async -> Bool {
         if microphone == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .audio) }
         return microphone == .granted
     }
 
-    /// Shows the macOS prompt for Speech Recognition when the status is not decided yet.
     public static func requestSpeechRecognition() async -> Bool {
         if speechRecognition == .notDetermined {
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -46,7 +40,6 @@ public enum DictationPermissions {
         return speechRecognition == .granted
     }
 
-    /// Asks for both permissions in turn. Returns true when both are granted.
     public static func requestAll() async -> Bool {
         let microphone = await requestMicrophone()
         let speech = await requestSpeechRecognition()

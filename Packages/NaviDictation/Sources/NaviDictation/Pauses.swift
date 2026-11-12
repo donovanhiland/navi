@@ -1,11 +1,8 @@
 import Foundation
 
-/// Finds pauses in 16 kHz mono audio. Pure.
 enum Pauses {
-    /// The length of one loudness frame: 20 ms.
     static let frame = 320
 
-    /// The loudness of speech in the clip: the 90th percentile of the frame loudness (RMS).
     static func speechLevel(_ samples: ArraySlice<Float>) -> Float {
         var levels: [Float] = []
         var start = samples.startIndex
@@ -18,9 +15,6 @@ enum Pauses {
         return levels[min(levels.count - 1, levels.count * 9 / 10)]
     }
 
-    /// The quietest stretch of `window` samples in `range`: its middle and its loudness, which is the
-    /// loudest 20 ms frame inside it (RMS), so a short sound in the stretch counts in full.
-    /// Steps one frame at a time. Nil when the range is shorter than the window.
     static func quietest(in samples: ArraySlice<Float>, range: Range<Int>, window: Int = 1600) -> (middle: Int, level: Float)? {
         let lower = max(range.lowerBound, samples.startIndex)
         let upper = min(range.upperBound, samples.endIndex)

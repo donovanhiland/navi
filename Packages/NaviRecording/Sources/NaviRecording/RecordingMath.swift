@@ -1,20 +1,9 @@
 import CoreGraphics
 import Foundation
 
-/// Pure math for recording: sizes, GIF frame timing, geometry, labels, and file names.
-///
-/// Coordinate spaces:
-/// - Display-local: points, origin at the top left of one display (what `RecordingRegion.area` uses).
-/// - Cocoa global: origin at the bottom left of the primary display, y goes up (`NSScreen.frame`).
-/// - Quartz global: origin at the top left of the primary display, y goes down (`CGEvent`, `CGWindowList`).
 enum RecordingMath {
-    // MARK: Video size
-
-    /// Largest video side in pixels. Hardware H.264 stops at about 4096 x 2304.
     static let maxVideoSide = 4096
 
-    /// The video size in pixels for a size in points. Both sides are even (H.264 needs this).
-    /// A size over `maxVideoSide` shrinks and keeps its shape.
     static func videoPixelSize(points: CGSize, scale: CGFloat) -> (width: Int, height: Int) {
         var width = max(points.width * scale, 2)
         var height = max(points.height * scale, 2)
@@ -31,21 +20,14 @@ enum RecordingMath {
         max(Int(value.rounded(.down)) & ~1, 2)
     }
 
-    /// A video bit rate in bits per second for a size and frame rate.
     static func videoBitRate(width: Int, height: Int, framesPerSecond: Int) -> Int {
         let rate = Double(width * height * framesPerSecond) * 0.07
         return Int(min(max(rate, 4_000_000), 60_000_000))
     }
 
-    // MARK: GIF
-
-    /// How to turn a video into a GIF.
     struct GIFPlan: Equatable {
-        /// Frame times in seconds from the start of the video.
         var times: [Double]
-        /// Seconds each frame shows.
         var frameDelay: Double
-        /// Output size in pixels.
         var width: Int
         var height: Int
     }
@@ -53,8 +35,6 @@ enum RecordingMath {
     static let gifFramesPerSecond = 15.0
     static let gifMaxWidth = 800.0
 
-    /// Frame times, delay, and size for a GIF. Frames sit at the middle of their slot so the
-    /// first and last frames are never past the end of the video.
     static func gifPlan(
         duration: Double, naturalSize: CGSize,
         framesPerSecond: Double = gifFramesPerSecond, maxWidth: Double = gifMaxWidth
@@ -68,14 +48,10 @@ enum RecordingMath {
         return GIFPlan(times: times, frameDelay: delay, width: width, height: height)
     }
 
-    // MARK: Geometry
-
-    /// Converts between Cocoa global and Quartz global rects. The formula is the same in both directions.
     static func flip(_ rect: CGRect, primaryHeight: CGFloat) -> CGRect {
         CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
     }
 
-    /// A display-local rect (top left origin) as a Cocoa global rect, given the display's Cocoa frame.
     static func cocoaRect(forLocal local: CGRect, displayFrame: CGRect) -> CGRect {
         CGRect(
             x: displayFrame.minX + local.minX,
@@ -85,8 +61,6 @@ enum RecordingMath {
         )
     }
 
-    /// Where the record bar goes: centered below the region. When there is no room below, above it.
-    /// When there is no room above either, inside the region near the bottom. Always inside `visible`.
     static func barFrame(region: CGRect, barSize: CGSize, visible: CGRect, gap: CGFloat = 12) -> CGRect {
         var x = region.midX - barSize.width / 2
         var y = region.minY - gap - barSize.height
@@ -101,8 +75,6 @@ enum RecordingMath {
         return CGRect(origin: CGPoint(x: x, y: y), size: barSize)
     }
 
-    /// A new display-local area for a typed pixel size. The origin stays when the area still fits,
-    /// otherwise it moves in. The size is at least 40 points and at most the display.
     static func resizedArea(
         _ area: CGRect, toPixelWidth width: Int, height: Int, scale: CGFloat, displaySize: CGSize
     ) -> CGRect {
@@ -113,9 +85,6 @@ enum RecordingMath {
         return CGRect(x: x, y: y, width: w, height: h)
     }
 
-    // MARK: Labels and names
-
-    /// "0:12" for 12 seconds, "1:05:09" for over an hour.
     static func elapsedLabel(_ seconds: TimeInterval) -> String {
         let total = max(Int(seconds), 0)
         let h = total / 3600
@@ -124,7 +93,6 @@ enum RecordingMath {
         return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
     }
 
-    /// The file name for a recording, for example `Navi 2026-11-06 at 16.10.12.mp4`.
     static func fileName(for date: Date, fileExtension: String, timeZone: TimeZone = .current) -> String {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
@@ -136,9 +104,7 @@ enum RecordingMath {
     }
 }
 
-/// Text for the keystroke pill.
 enum KeyLabel {
-    /// Names for keys that have no printable character, by virtual key code.
     private static let special: [Int64: String] = [
         36: "⏎", 76: "⌅", 48: "⇥", 49: "Space", 51: "⌫", 117: "⌦", 53: "⎋",
         123: "←", 124: "→", 125: "↓", 126: "↑",
@@ -147,12 +113,6 @@ enum KeyLabel {
         98: "F7", 100: "F8", 101: "F9", 109: "F10", 103: "F11", 111: "F12",
     ]
 
-    /// The pill text for a key press, or nil when nothing should show.
-    ///
-    /// Plain typing never shows (it could be a password). A press shows when it has ⌘, ⌃, or ⌥,
-    /// or when it is a special key such as ⏎ or an arrow.
-    /// - Parameters:
-    ///   - character: the key without modifiers, for example "4" for ⇧⌘4.
     static func text(keyCode: Int64, flags: CGEventFlags, character: String?) -> String? {
         let name: String
         if let named = special[keyCode] {

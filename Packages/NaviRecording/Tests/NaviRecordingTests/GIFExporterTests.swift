@@ -6,7 +6,6 @@ import Testing
 
 @Suite("GIFExporter")
 struct GIFExporterTests {
-    /// Writes a small H.264 MP4 with a color that changes every frame.
     private func makeVideo(seconds: Double, width: Int, height: Int) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "navi-test-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)

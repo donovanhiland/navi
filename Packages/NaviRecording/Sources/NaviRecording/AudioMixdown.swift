@@ -1,9 +1,6 @@
 import AVFoundation
 import os
 
-/// Turns an MP4 with two audio tracks (computer audio and microphone) into one with a single mixed track.
-///
-/// Video is copied, not re-encoded, so this is fast. If anything fails, the original file stays as it was.
 enum AudioMixdown {
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Recording")
 
@@ -24,8 +21,6 @@ enum AudioMixdown {
         }
     }
 
-    /// Reads video as is and audio mixed to one PCM stream, and writes both to a new file.
-    /// Runs blocking loops, so call it off the main actor.
     private static func copy(
         asset: AVAsset, video: AVAssetTrack, videoFormat: CMFormatDescription?,
         audio: [AVAssetTrack], to url: URL
@@ -62,7 +57,6 @@ enum AudioMixdown {
         var pendingVideo = videoOut.copyNextSampleBuffer()
         var pendingAudio = audioOut.copyNextSampleBuffer()
         while pendingVideo != nil || pendingAudio != nil {
-            // Write the earlier sample first so the two streams stay interleaved.
             let useVideo: Bool
             if let v = pendingVideo, let a = pendingAudio {
                 useVideo = v.presentationTimeStamp <= a.presentationTimeStamp

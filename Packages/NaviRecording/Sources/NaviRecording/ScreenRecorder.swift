@@ -3,17 +3,13 @@ import CoreMedia
 import os
 import ScreenCaptureKit
 
-/// Records a display, an area of a display, or one window to an MP4.
 @MainActor
 final class ScreenRecorder {
     struct Settings: Sendable {
         var region: RecordingRegion
         var options: RecordingOptions
         var outputURL: URL
-        /// Navi windows that must stay out of the video (record bar, outline, stop pill).
-        /// Other Navi windows, such as the camera bubble and click overlays, are in the video.
         var excludedWindowIDs: Set<CGWindowID>
-        /// Whether the file gets audio. GIFs do not.
         var recordsAudio: Bool
     }
 
@@ -23,10 +19,8 @@ final class ScreenRecorder {
     }
 
     static let finderBundleID = "com.apple.finder"
-    /// The owner of banner and widget windows on this Mac. `lsappinfo` shows it as "Notification Center".
     static let notificationCenterBundleID = "com.apple.notificationcenterui"
 
-    /// Called when the stream stops without `stop()`. Call `stop()` next to get the partial file.
     var onUnexpectedStop: (@MainActor (Error?) -> Void)?
 
     private(set) var isRunning = false
@@ -35,8 +29,6 @@ final class ScreenRecorder {
     private var settings: Settings?
     private var refreshTask: Task<Void, Never>?
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Recording")
-
-    // MARK: Start and stop
 
     func start(_ settings: Settings) async throws {
         guard !isRunning else { return }
@@ -99,7 +91,6 @@ final class ScreenRecorder {
         startFilterRefresh()
     }
 
-    /// Stops the stream and ends the file. Also call it after `onUnexpectedStop`.
     func stop() async throws -> Output {
         refreshTask?.cancel()
         refreshTask = nil
@@ -108,7 +99,6 @@ final class ScreenRecorder {
         self.sink = nil
         self.settings = nil
         isRunning = false
-        // The stream may already be stopped. That is fine.
         try? await stream.stopCapture()
         let duration = try await sink.finish()
         if settings.recordsAudio, settings.options.computerAudio, settings.options.microphone {
@@ -123,8 +113,6 @@ final class ScreenRecorder {
         onUnexpectedStop?(error)
     }
 
-    // MARK: Filter
-
     private static func makeFilter(_ settings: Settings, content: SCShareableContent) throws -> SCContentFilter {
         switch settings.region {
         case .window(let id):
@@ -137,7 +125,6 @@ final class ScreenRecorder {
             let excluded = content.windows.filter { window in
                 if settings.excludedWindowIDs.contains(window.windowID) { return true }
                 let bundleID = window.owningApplication?.bundleIdentifier
-                // Finder draws desktop icons in windows below the normal window layer.
                 if settings.options.hideDesktopIcons, bundleID == finderBundleID, window.windowLayer < 0 { return true }
                 if settings.options.muteNotifications, bundleID == notificationCenterBundleID { return true }
                 return false
@@ -146,9 +133,6 @@ final class ScreenRecorder {
         }
     }
 
-    // MARK: Notification windows
-
-    /// A banner is a new window. Poll the cheap window list and rebuild the filter when the set changes.
     private func startFilterRefresh() {
         guard let settings, settings.options.muteNotifications else { return }
         if case .window = settings.region { return }

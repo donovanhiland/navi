@@ -8,7 +8,6 @@ struct PreRollBufferTests {
     func keepsTheNewestAudio() {
         var buffer = PreRollBuffer<Int>(capacity: 100)
         for chunk in 1 ... 10 { buffer.append(chunk, frames: 30) }
-        // 4 chunks (120 frames) cover 100; 3 chunks (90) would not.
         #expect(buffer.chunks.map(\.chunk) == [7, 8, 9, 10])
         #expect(buffer.frames == 120)
     }

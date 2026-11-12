@@ -3,7 +3,6 @@ import Foundation
 import NaviClipboard
 import NaviCore
 
-/// Seeds each size, times every scenario, and returns the report.
 @MainActor
 func runBench(_ options: BenchOptions, packageRoot: URL) throws -> BenchReport {
     let sizes = try options.sizes.map { try benchmarkSize($0, options: options) }
@@ -21,7 +20,6 @@ func runBench(_ options: BenchOptions, packageRoot: URL) throws -> BenchReport {
     )
 }
 
-/// Times each scenario on a history of `count` items in a fresh temporary directory, removed at the end.
 @MainActor
 private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeResult {
     let directory = FileManager.default.temporaryDirectory.appending(
@@ -35,18 +33,14 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
     defer { try? FileManager.default.removeItem(at: hugeDirectory) }
     try seedHugeHistory(count, options: options, in: hugeDirectory)
     let bytes = try fileSize(directory.appending(path: "history.json"))
-    // Above `count`, so `add` never evicts a seeded item.
     let limit = count + 100
     let inbox = Inbox(directory: directory, limit: limit)
     guard inbox.items.count == count else {
         throw BenchError.seeding(expected: count, found: inbox.items.count)
     }
-    // Small histories take microseconds, where timer noise dominates, so they get more timed runs:
-    // iterations × max(1, 1000 / size). At the default 20 that is 100 runs at 200 items, 20 at 1,000 and up.
     let runs = options.iterations * max(1, 1000 / count)
     var scenarios: [ScenarioResult] = []
 
-    // Let the previous inbox's background work finish outside the timer.
     var previous: Inbox?
     let load = sample(runs, prepare: { settle(&previous) }, run: { _ in
         let loaded = Inbox(directory: directory, limit: limit)
@@ -74,7 +68,6 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
     inbox.flush()
     scenarios.append(ScenarioResult(name: "add", milliseconds: add.milliseconds))
 
-    // Add plus the wait for the background write.
     let saveFlush = sample(runs, prepare: {
         if let id = added {
             inbox.remove(id)
@@ -91,7 +84,6 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
     inbox.flush()
     scenarios.append(ScenarioResult(name: "save-flush", milliseconds: saveFlush.milliseconds))
 
-    // A pasted 2 MB text; its key is built in the background.
     var addedLarge: UUID?
     var largeCounter = 0
     let addLarge = sample(runs, prepare: {
@@ -114,7 +106,6 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
         let result = sample(runs, prepare: { () }, run: { _ in inbox.search(query).count })
         scenarios.append(ScenarioResult(name: name, milliseconds: result.milliseconds, matches: result.count))
     }
-    // Only the main-actor work of the first search is timed.
     func coldSearch(_ name: String, _ query: String, in directory: URL) -> ScenarioResult {
         var deferred = 0
         var last: Inbox?
@@ -132,9 +123,7 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
         return ScenarioResult(name: name, milliseconds: cold.milliseconds, matches: cold.count, deferred: deferred)
     }
     for (name, query) in queries.cold { scenarios.append(coldSearch(name, query, in: directory)) }
-    // First search with a keyless 2 MB text, which must be deferred.
     scenarios.append(coldSearch("search-cold-huge", "привет", in: hugeDirectory))
-    // Time until the background build has installed every key.
     let warmup = sample(runs, prepare: { Inbox(directory: directory, limit: limit) }, run: { fresh in
         while !fresh.isSearchReady { RunLoop.main.run(mode: .default, before: .now + 0.0005) }
         return 1
@@ -142,7 +131,6 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
     scenarios.append(ScenarioResult(name: "search-warmup", milliseconds: warmup.milliseconds))
 
     let model = ClipboardModel(inbox: inbox)
-    // Clearing the query first makes each timed run a real search: the memo only answers a repeat of the last query.
     let results = sample(runs, prepare: { () }, run: { _ in
         model.query = ""
         _ = model.results
@@ -150,14 +138,12 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
         return model.results.count
     })
     scenarios.append(ScenarioResult(name: "results", milliseconds: results.milliseconds, matches: results.count))
-    // Nothing changed since the last read, so every run is a memo hit.
     let repeated = sample(runs, prepare: { () }, run: { _ in model.results.count })
     scenarios.append(ScenarioResult(name: "results-repeat", milliseconds: repeated.milliseconds, matches: repeated.count))
 
     return SizeResult(items: count, historyKB: Double(bytes) / 1024, scenarios: scenarios)
 }
 
-/// Seeds `count` items in `directory`, then adds one 2 MB mixed-script text.
 @MainActor
 private func seedHugeHistory(_ count: Int, options: BenchOptions, in directory: URL) throws {
     try HistorySeeder.write(count: count, seed: options.seed, corpus: options.corpus, to: directory)
@@ -166,21 +152,16 @@ private func seedHugeHistory(_ count: Int, options: BenchOptions, in directory: 
     inbox.flush()
 }
 
-/// The 2 MB mixed-script text.
 private let hugeText = String(repeating: "Привет мир 日本語のテキスト 😀 ", count: 40_000)
 
-/// Waits for `inbox`'s background search build, then frees it.
 @MainActor
 private func settle(_ inbox: inout Inbox?) {
     while let current = inbox, !current.isSearchReady { RunLoop.main.run(mode: .default, before: .now + 0.0005) }
     inbox = nil
 }
 
-/// Untimed runs before the timed ones. Three, so caches and the allocator settle before the first sample.
 private let warmUpRuns = 3
 
-/// Runs `run` `warmUpRuns` times untimed, then `iterations` timed times. `prepare` runs before each run, outside the timer.
-/// Returns the timed runs in milliseconds and the count from the last run.
 @MainActor
 private func sample<Input>(
     _ iterations: Int, prepare: () -> Input, run: (Input) -> Int
@@ -205,7 +186,6 @@ private func fileSize(_ url: URL) throws -> Int {
     try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
 }
 
-/// The (scenario name, query) pairs each corpus times.
 private struct SearchQueries {
     let warm: [(String, String)]
     let cold: [(String, String)]

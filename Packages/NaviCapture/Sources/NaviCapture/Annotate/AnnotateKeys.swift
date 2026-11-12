@@ -1,8 +1,5 @@
 import AppKit
 
-/// Keys shared by the markup editor window and edit after capture: one letter per tool
-/// (A arrow, T text…), ⌘Z undo, ⇧⌘Z redo, and Delete for the selected mark. While text is
-/// being typed, the text field keeps every key except Esc, which ends the typing.
 @MainActor
 enum AnnotateKeys {
     static let escape: UInt16 = 53
@@ -11,7 +8,6 @@ enum AnnotateKeys {
     private static let delete: UInt16 = 51
     private static let forwardDelete: UInt16 = 117
 
-    /// Returns true when the key was used, so the caller drops the event.
     static func handle(_ event: NSEvent, model: AnnotateModel) -> Bool {
         let key = event.charactersIgnoringModifiers?.lowercased()
         let code = event.keyCode
@@ -34,7 +30,6 @@ enum AnnotateKeys {
         return false
     }
 
-    /// The modifier keys held, without fn, keypad, and caps lock.
     static func modifiers(of event: NSEvent) -> NSEvent.ModifierFlags {
         event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.function, .numericPad, .capsLock])
     }

@@ -3,11 +3,9 @@ import AVFoundation
 import AVKit
 import os
 
-/// A window with a player and the system trim handles. On Trim, it exports the chosen range.
 @MainActor
 final class TrimWindow: NSObject, NSWindowDelegate {
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Recording")
-    /// Windows that are open now. Keeps each one alive until it closes.
     private static var open: [TrimWindow] = []
 
     private let sourceURL: URL
@@ -33,8 +31,6 @@ final class TrimWindow: NSObject, NSWindowDelegate {
         playerView.player = AVPlayer(playerItem: playerItem)
     }
 
-    /// Shows the trim window and waits. Returns the trimmed file, the same file when nothing was cut,
-    /// or nil when the user cancels or the file cannot be trimmed.
     static func trim(_ url: URL) async -> URL? {
         let controller = TrimWindow(url: url)
         open.append(controller)
@@ -59,7 +55,6 @@ final class TrimWindow: NSObject, NSWindowDelegate {
         window.close()
         guard accepted else { return nil }
 
-        // After Trim, the player item holds the chosen range.
         let start = playerItem.reversePlaybackEndTime
         let end = playerItem.forwardPlaybackEndTime
         let range = TrimRange.resolve(start: start.isNumeric ? start.seconds : nil,
@@ -83,11 +78,9 @@ final class TrimWindow: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        // The close button counts as Cancel.
         finish(false)
     }
 
-    /// Cuts `[start, end]` seconds into a new MP4. This re-encodes, so the cut is exact.
     private nonisolated static func export(_ url: URL, from start: Double, to end: Double, outputURL: URL) async throws -> URL {
         try? FileManager.default.removeItem(at: outputURL)
         let asset = AVURLAsset(url: url)
@@ -103,7 +96,6 @@ final class TrimWindow: NSObject, NSWindowDelegate {
     }
 }
 
-/// The chosen range of a trim, or nil when it keeps the whole video.
 enum TrimRange {
     static func resolve(start: Double?, end: Double?, duration: Double, tolerance: Double = 0.05) -> (start: Double, end: Double)? {
         let s = min(max(start ?? 0, 0), duration)

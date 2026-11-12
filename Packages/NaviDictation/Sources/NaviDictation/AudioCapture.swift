@@ -3,7 +3,6 @@ import AudioToolbox
 import CoreAudio
 import os
 
-/// An audio buffer that moves between threads. The buffer is not changed after the tap hands it over.
 struct AudioChunk: @unchecked Sendable {
     let buffer: AVAudioPCMBuffer
 }
@@ -20,7 +19,6 @@ enum DictationError: Error, LocalizedError {
     }
 }
 
-/// The newest audio, up to `capacity` frames. Older chunks fall off the front. Pure, so it can be tested.
 struct PreRollBuffer<Chunk> {
     let capacity: Int
     private(set) var chunks: [(chunk: Chunk, frames: Int)] = []
@@ -33,14 +31,12 @@ struct PreRollBuffer<Chunk> {
     mutating func append(_ chunk: Chunk, frames count: Int) {
         chunks.append((chunk, count))
         frames += count
-        // Drop whole chunks from the front while the rest still covers the capacity.
         while let first = chunks.first, frames - first.frames >= capacity {
             frames -= first.frames
             chunks.removeFirst()
         }
     }
 
-    /// Hands back the kept chunks, oldest first, and empties the buffer.
     mutating func drain() -> [Chunk] {
         defer {
             chunks = []
@@ -50,33 +46,13 @@ struct PreRollBuffer<Chunk> {
     }
 }
 
-/// The microphone, in two modes.
-///
-/// - **Warm (default, like Wispr Flow):** the input unit is set up ahead of time (`prepare`) but not
-///   running, so there is no microphone indicator. A press only starts it (`open`), which is quick;
-///   after the dictation it stops but stays set up (`pause`).
-/// - **Keep ready (Hex's mode):** the stream stays open between dictations and keeps the last `preRoll`
-///   seconds, so a press records from just before it. macOS shows the microphone indicator the whole time.
-///
-/// It records with an input-only audio unit (AUHAL) on the default input device, like Hex (through cpal).
-/// It never touches the output device: `AVAudioEngine` joins the mic and the speakers in a hidden
-/// aggregate device, which changes how music sounds and cuts it out when the engine stops.
-///
-/// Not tied to the main actor: the input callback runs on an audio thread.
 final class Microphone: @unchecked Sendable {
-    /// Audio kept from before the press (Hex keeps 450 ms).
     static let preRoll: Double = 0.45
-    /// Recording goes on after the release until this much quiet, so the last word is not cut (Hex's
-    /// 200 ms `POST_RELEASE_TAIL`). When the user stopped talking before the release, the wait is short.
     static let quietToEnd: Duration = .milliseconds(200)
-    /// The shortest wait after the release, for audio still on its way from the device.
     static let minimumTail: Duration = .milliseconds(40)
-    /// The longest wait after the release, while speech goes on (Hex's cap).
     static let maximumTail: Duration = .milliseconds(600)
-    /// Loudness (0...1, see `loudness(of:)`) that counts as sound: about -40 dB.
     static let soundLevel: Float = 0.45
 
-    /// Holds audio buffers, which only move under the lock.
     private struct State: @unchecked Sendable {
         var running = false
         var unit: AudioUnit?
@@ -87,7 +63,6 @@ final class Microphone: @unchecked Sendable {
         var lastSound: ContinuousClock.Instant?
     }
 
-    /// Setup, start, stop, and teardown take turns (they run on different threads).
     private let setup = NSRecursiveLock()
     private let state = OSAllocatedUnfairLock(initialState: State())
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Microphone")
@@ -101,7 +76,6 @@ final class Microphone: @unchecked Sendable {
     )
 
     init() {
-        // A new default input (AirPods, a USB mic): set up again on the new device.
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
             let (wasRunning, wasPrepared) = state.withLockUnchecked { ($0.running, $0.unit != nil) }
@@ -131,11 +105,8 @@ final class Microphone: @unchecked Sendable {
 
     var isRunning: Bool { state.withLock { $0.running } }
 
-    /// Loudness of the newest buffer, 0...1.
     var level: Float { state.withLock { $0.level } }
 
-    /// Sets up the input unit without starting the microphone (no indicator). Makes `open` quick.
-    /// Takes about 20 ms, so call it off the main thread.
     func prepare() throws {
         setup.lock()
         defer { setup.unlock() }
@@ -148,7 +119,6 @@ final class Microphone: @unchecked Sendable {
         }
     }
 
-    /// Starts the microphone, setting it up first if needed.
     func open() throws {
         setup.lock()
         defer { setup.unlock() }
@@ -159,7 +129,6 @@ final class Microphone: @unchecked Sendable {
         state.withLock { $0.running = true }
     }
 
-    /// Stops the microphone but keeps it set up, so the next `open` is quick. A capture still open ends.
     func pause() {
         setup.lock()
         defer { setup.unlock() }
@@ -176,7 +145,6 @@ final class Microphone: @unchecked Sendable {
         if wasRunning, let unit { AudioOutputUnitStop(unit) }
     }
 
-    /// Stops the microphone and takes the setup down.
     func close() {
         setup.lock()
         defer { setup.unlock() }
@@ -193,8 +161,6 @@ final class Microphone: @unchecked Sendable {
         AudioComponentInstanceDispose(unit)
     }
 
-    /// Sends the audio to `sink` from now on. With `includePreRoll`, the kept audio from just before
-    /// goes first.
     func beginCapture(into sink: AsyncStream<AudioChunk>.Continuation, includePreRoll: Bool) {
         let kept = state.withLockUnchecked { state -> [AVAudioPCMBuffer] in
             state.sink = sink
@@ -204,8 +170,6 @@ final class Microphone: @unchecked Sendable {
         for buffer in kept { sink.yield(AudioChunk(buffer: buffer)) }
     }
 
-    /// Waits after the release until the user has been quiet for `quietToEnd`, between `minimumTail`
-    /// and `maximumTail`. Someone who stopped talking before the release waits only `minimumTail`.
     func waitForReleaseTail(releasedAt released: ContinuousClock.Instant) async {
         while true {
             let now = ContinuousClock.now
@@ -215,7 +179,6 @@ final class Microphone: @unchecked Sendable {
         }
     }
 
-    /// True when the release tail can end. Pure, so it can be tested.
     static func tailIsDone(sinceRelease: Duration, sinceSound: Duration?) -> Bool {
         if sinceRelease < minimumTail { return false }
         if sinceRelease >= maximumTail { return true }
@@ -223,7 +186,6 @@ final class Microphone: @unchecked Sendable {
         return sinceSound >= quietToEnd
     }
 
-    /// Ends the capture: the sink gets no more audio and finishes.
     func endCapture() {
         let sink = state.withLock { state -> AsyncStream<AudioChunk>.Continuation? in
             defer { state.sink = nil }
@@ -232,9 +194,6 @@ final class Microphone: @unchecked Sendable {
         sink?.finish()
     }
 
-    // MARK: Input unit
-
-    /// An AUHAL unit with input on and output off, on the default input device, initialized but not started.
     private static func makeInputUnit(context: UnsafeMutableRawPointer) throws -> (AudioUnit, AVAudioFormat) {
         var description = AudioComponentDescription(
             componentType: kAudioUnitType_Output, componentSubType: kAudioUnitSubType_HALOutput,
@@ -257,7 +216,6 @@ final class Microphone: @unchecked Sendable {
                 UInt32(MemoryLayout<AudioObjectID>.size)
             ), "pick the input device")
 
-            // The device's own format, then the same rate and channels as Float32 for the callback.
             var hardware = AudioStreamBasicDescription()
             var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
             try check(AudioUnitGetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 1, &hardware, &size), "read the input format")
@@ -297,7 +255,6 @@ final class Microphone: @unchecked Sendable {
         throw DictationError.noMicrophone
     }
 
-    /// Runs on the audio thread for each slice of input: pulls the audio into a new buffer.
     private static let inputCallback: AURenderCallback = { context, flags, timeStamp, bus, frames, _ in
         let microphone = Unmanaged<Microphone>.fromOpaque(context).takeUnretainedValue()
         return microphone.render(flags: flags, timeStamp: timeStamp, bus: bus, frames: frames)
@@ -323,14 +280,12 @@ final class Microphone: @unchecked Sendable {
         let sink = state.withLockUnchecked { state -> AsyncStream<AudioChunk>.Continuation? in
             state.level = level
             if level >= Self.soundLevel { state.lastSound = now }
-            // Each slice is a new buffer, so the pre-roll can keep it as is.
             if state.sink == nil { state.preRoll.append(buffer, frames: Int(buffer.frameLength)) }
             return state.sink
         }
         sink?.yield(AudioChunk(buffer: buffer))
     }
 
-    /// Loudness from 0 to 1. RMS in dB, with -50 dB as silence, and a curve that keeps quiet speech visible.
     static func loudness(of buffer: AVAudioPCMBuffer) -> Float {
         guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         var sum: Float = 0

@@ -2,10 +2,7 @@ import AVFoundation
 import ImageIO
 import UniformTypeIdentifiers
 
-/// Converts an MP4 to a looping GIF with ImageIO. The GIF has no sound.
 enum GIFExporter {
-    /// Writes `<name>.gif` next to the video and returns its URL.
-    /// About 15 frames per second, at most 800 pixels wide.
     static func makeGIF(from videoURL: URL) async throws -> URL {
         let asset = AVURLAsset(url: videoURL)
         let duration = try await asset.load(.duration).seconds
@@ -18,7 +15,6 @@ enum GIFExporter {
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: plan.width, height: plan.height)
-        // A little slack is much faster than exact frames, and a frame is 1/15 s anyway.
         generator.requestedTimeToleranceBefore = CMTime(value: 1, timescale: 30)
         generator.requestedTimeToleranceAfter = CMTime(value: 1, timescale: 30)
 
@@ -42,14 +38,12 @@ enum GIFExporter {
         var added = 0
         var previous: CGImage?
         for await result in generator.images(for: times) {
-            // A frame that fails repeats the one before it, so the timing stays right.
             let image = (try? result.image) ?? previous
             guard let image else { continue }
             CGImageDestinationAddImage(destination, image, frameProperties)
             previous = image
             added += 1
         }
-        // Finalize needs exactly the announced count.
         while added < plan.times.count, let previous {
             CGImageDestinationAddImage(destination, previous, frameProperties)
             added += 1

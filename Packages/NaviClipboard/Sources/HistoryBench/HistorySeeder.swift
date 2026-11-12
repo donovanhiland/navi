@@ -3,10 +3,7 @@ import CryptoKit
 import Foundation
 import NaviCore
 
-/// Writes a deterministic history in the on-disk format `Inbox` reads: `history.json` plus `files/`.
-/// The JSON is written once, because `Inbox.add` would rewrite the whole file for every item.
 enum HistorySeeder {
-    /// Words for text items. `the` is common, `quartz` is rare, and no item contains `zzqxv`.
     static let vocabulary = [
         "the", "and", "report", "invoice", "meeting", "budget", "design", "review", "notes", "draft",
         "client", "update", "project", "schedule", "travel", "lunch", "email", "contract", "screenshot", "release",
@@ -20,16 +17,13 @@ enum HistorySeeder {
         "Reunião", "avaliação", "prática", "número", "histórico", "só", "relatório", "orçamento", "ênfase", "atenção",
     ]
     static let sourceApps = ["Safari", "Notes", "Xcode", "Mail", "Terminal"]
-    /// Two large and two small pictures, rendered once and reused for every image item.
     static let pictureSizes = [
         CGSize(width: 2560, height: 1600), CGSize(width: 2560, height: 1600),
         CGSize(width: 800, height: 600), CGSize(width: 800, height: 600),
     ]
-    /// Share of items that are images, in percent.
     static let imagePercent = 20
     static let firstDate = Date(timeIntervalSince1970: 1_767_225_600)
 
-    /// Writes `count` items into `directory`, with the same content for the same seed.
     static func write(count: Int, seed: UInt64, corpus: Corpus = .ascii, to directory: URL) throws {
         var random = LCG(seed: seed)
         let files = directory.appending(path: "files", directoryHint: .isDirectory)
@@ -64,7 +58,6 @@ enum HistorySeeder {
         try JSONEncoder().encode(items).write(to: directory.appending(path: "history.json"))
     }
 
-    /// One word list per script for the `mixed` corpus.
     static let mixedVocabularies: [[String]] = [
         accentedVocabulary,
         ["привет", "мир", "отчёт", "проект", "встреча", "бюджет", "клиент", "сервер", "резервная", "копия", "окно",
@@ -98,7 +91,6 @@ enum HistorySeeder {
         return text
     }
 
-    /// A text item of 20 to 4000 characters, starting with its index so no two items match.
     private static func makeText(index: Int, _ random: inout LCG) -> String {
         let target = 20 + random.below(3981)
         var text = "#\(index)"
@@ -111,7 +103,6 @@ enum HistorySeeder {
         return String(text.prefix(target))
     }
 
-    /// A picture of random colored rectangles, encoded as PNG.
     private static func renderPicture(_ size: CGSize, _ random: inout LCG) throws -> Data {
         let width = Int(size.width)
         let height = Int(size.height)
@@ -154,7 +145,6 @@ enum HistorySeeder {
     }
 }
 
-/// A small deterministic generator (64-bit linear congruential), so one seed always gives one history.
 struct LCG {
     private var state: UInt64
 
@@ -167,7 +157,6 @@ struct LCG {
         return state >> 33
     }
 
-    /// A number in `0..<bound`.
     mutating func below(_ bound: Int) -> Int {
         Int(next() % UInt64(bound))
     }

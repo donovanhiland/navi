@@ -4,15 +4,12 @@ import NaviCore
 import ScreenCaptureKit
 import os
 
-/// A part of the screen to record. The app passes it to the recording feature.
 public enum CaptureRegion: Sendable {
     case display(CGDirectDisplayID)
-    /// Display-local points with the origin at the top left.
     case area(CGDirectDisplayID, CGRect)
     case window(CGWindowID)
 }
 
-/// Video tools from the recording feature. The app supplies them, so this package does not import it.
 public struct VideoTools {
     public var trim: @MainActor (URL) async -> URL?
     public var makeGIF: @MainActor (URL) async throws -> URL
@@ -23,14 +20,10 @@ public struct VideoTools {
     }
 }
 
-/// Screenshots and their tools: area, window, fullscreen, all-in-one, scrolling, text (OCR), timer,
-/// markup, background, and pins. Every capture goes to the Inbox and shows as a corner card.
 @MainActor
 public final class CaptureFeature {
     public let settings: CaptureSettings
-    /// Set by the app to turn on Record in the all-in-one bar.
     public var onRecordRequest: ((CaptureRegion) -> Void)?
-    /// Set by the app to turn on Trim and GIF on recording cards.
     public var videoTools: VideoTools?
 
     private let inbox: Inbox
@@ -38,14 +31,10 @@ public final class CaptureFeature {
     private let pins = PinBoard()
     private var session: SelectionSession?
     private var scrollSession: ScrollCaptureSession?
-    /// Edit after capture, while it is open.
     private var inPlaceEditor: InPlaceAnnotator?
-    /// The frozen screens of the running selection. Edit after capture shows them behind the area.
     private var frozenScreens: [(NSScreen, CapturedImage)] = []
-    /// Open editor windows, kept alive until they close.
     private var editors: [UUID: AnyObject] = [:]
     private var isBusy = false
-    /// The next shot also goes to the clipboard (`⌃⇧⌘3`, `⌃⇧⌘4`).
     private var copiesNextShot = false
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Capture")
 
@@ -68,18 +57,11 @@ public final class CaptureFeature {
         )
     }
 
-    // MARK: Permission
-
-    /// Screen Recording permission, needed for every capture.
     public static var hasScreenAccess: Bool { CGPreflightScreenCaptureAccess() }
 
-    /// Asks for Screen Recording the way ScreenCaptureKit apps do. macOS shows its prompt and adds
-    /// Navi to System Settings > Privacy & Security > Screen Recording, switched off, so the user
-    /// only flips the switch (never the + button). Then the settings page opens if access is still off.
     public static func requestScreenAccess(openSettings: Bool = true) {
         Task { @MainActor in
             _ = CGRequestScreenCaptureAccess()
-            // Asking ScreenCaptureKit for the screen list is what lists the app in Settings.
             _ = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
             guard openSettings, !CGPreflightScreenCaptureAccess(),
                   let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
@@ -88,17 +70,13 @@ public final class CaptureFeature {
         }
     }
 
-    // MARK: Capture
-
     public func captureArea() { startSelection(.area, purpose: .screenshot) }
 
-    /// Like `captureArea`, then copies the shot to the clipboard (macOS's `⌃⇧⌘4`).
     public func captureAreaToClipboard() {
         copiesNextShot = true
         startSelection(.area, purpose: .screenshot)
     }
 
-    /// Like `captureFullscreen`, then copies the shot to the clipboard (macOS's `⌃⇧⌘3`).
     public func captureFullscreenToClipboard() {
         copiesNextShot = true
         captureFullscreen()
@@ -106,18 +84,14 @@ public final class CaptureFeature {
 
     public func captureWindow() { startSelection(.window, purpose: .screenshot) }
 
-    /// One hotkey, then pick the mode from the bar at the bottom of the screen.
     public func captureAllInOne() { startSelection(.area, purpose: .screenshot, modeBar: true) }
 
-    /// Select an area and copy its text (OCR) and QR codes.
     public func captureText() { startSelection(.area, purpose: .text) }
 
     public func captureScrolling() { startSelection(.area, purpose: .scroll) }
 
-    /// Pick an area, then wait `seconds` before the shot.
     public func captureArea(timer seconds: Int) { startSelection(.area, purpose: .screenshot, timer: seconds) }
 
-    /// Pick an area or window to record. Needs `onRecordRequest`.
     public func pickRecordingRegion() { startSelection(.area, purpose: .record) }
 
     public func captureFullscreen() {
@@ -135,7 +109,6 @@ public final class CaptureFeature {
 
     public func closeAllCards() { cards.closeAll() }
 
-    /// Shows a short message in a pill near the bottom of the screen.
     public static func showMessage(_ message: String) { Toast.show(message) }
 
     public var hasPins: Bool { !pins.isEmpty }
@@ -144,12 +117,9 @@ public final class CaptureFeature {
 
     public func closeAllPins() { pins.closeAll() }
 
-    /// Shows a finished recording as a corner card and adds it to the Inbox.
-    /// `url` is the file to share (MP4 or GIF); `videoURL` is the MP4.
     public func showRecording(url: URL, videoURL: URL, isGIF: Bool, duration: TimeInterval) {
         Task {
             let thumbnail = await Self.thumbnail(of: videoURL)
-            // The history keeps the MP4. The card can switch to GIF for sharing.
             let item: CaptureItem? = (try? Data(contentsOf: videoURL)).flatMap { data in
                 inbox.add(fileData: data, fileExtension: "mp4", kind: .recording, sourceApp: "Navi", deduplicate: false)
             }
@@ -174,9 +144,6 @@ public final class CaptureFeature {
         return try? await generator.image(at: .zero).image
     }
 
-    // MARK: Selection
-
-    /// Returns false when a capture is already running or the permission is missing.
     private func begin() -> Bool {
         guard !isBusy else { return false }
         guard Self.hasScreenAccess else {
@@ -196,8 +163,6 @@ public final class CaptureFeature {
             return
         }
         let previousApp = NSWorkspace.shared.frontmostApplication
-        // Show the overlay at once over the live screen, then freeze the screen behind it. The
-        // overlay is above layer 0, so the frozen images leave it out.
         let windows = ScreenGrabber.onScreenWindows()
         let session = SelectionSession(screens: NSScreen.screens, mode: mode, windows: windows) { [weak self] outcome in
             guard let self else { return }
@@ -213,13 +178,11 @@ public final class CaptureFeature {
         session.canRecord = onRecordRequest != nil
         session.keepsOverlayUntilDone = purpose == .screenshot && timer == 0 && settings.editAfterCapture
         self.session = session
-        // No NSApp.activate(): the overlay panels take the keys without raising Navi's other windows.
         session.begin()
         Task { [weak self, weak session] in
             guard let self else { return }
             do {
                 let screens = try await ScreenGrabber.captureAllScreens(hideDesktopIcons: settings.hideDesktopIcons)
-                // A selection cancelled before the freeze arrived must not keep the images.
                 guard let session else { return }
                 frozenScreens = screens
                 session.freeze(screens)
@@ -287,7 +250,6 @@ public final class CaptureFeature {
         case let (.window(id, screen), _):
             Task {
                 defer { isBusy = false }
-                // Let the window's app become active again, so the window looks active in the shot.
                 try? await Task.sleep(for: .milliseconds(150))
                 await Countdown.run(seconds: timer, on: screen)
                 do {
@@ -326,9 +288,6 @@ public final class CaptureFeature {
         scroll.begin()
     }
 
-    // MARK: Edit after capture
-
-    /// Keeps the capture busy until Return (copy) or Esc (cancel).
     private func editInPlace(
         _ captured: CapturedImage, backdrop: CGImage?, on screen: NSScreen, rect: CGRect, sourceApp: NSRunningApplication?
     ) {
@@ -347,8 +306,6 @@ public final class CaptureFeature {
         editor.show()
     }
 
-    /// Copies, saves, or stashes the marked-up shot. It always goes to the history,
-    /// with its marks kept editable.
     private func deliverEdited(
         _ result: AnnotateEditor.Result, action: InPlaceAnnotator.Action, on screen: NSScreen, sourceApp: NSRunningApplication?
     ) {
@@ -395,8 +352,6 @@ public final class CaptureFeature {
         }
     }
 
-    // MARK: Delivery
-
     private func deliver(_ captured: CapturedImage, on screen: NSScreen, sourceApp: NSRunningApplication?) {
         let pointSize = CGSize(
             width: CGFloat(captured.image.width) / captured.scale,
@@ -409,7 +364,6 @@ public final class CaptureFeature {
         let started = ContinuousClock.now
         let image = captured.image
         Task {
-            // PNG encoding takes about 0.1 s for a full 4K screen, so it runs off the main thread.
             let encoded = await Task.detached(priority: .userInitiated) {
                 ImageOps.png(image, pointSize: pointSize)
             }.value
@@ -440,9 +394,6 @@ public final class CaptureFeature {
         return image
     }
 
-    // MARK: Card actions
-
-    /// Copies the image (or the video file) and closes the card, like CleanShot X. Hold ⌥ to keep it open.
     private func copy(_ card: Card) {
         if card.isVideo {
             let pasteboard = NSPasteboard.general
@@ -484,8 +435,6 @@ public final class CaptureFeature {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    /// Opens the markup editor for an image in the history (⌘E in the ⇧⌘V list). Marks from an
-    /// earlier edit stay editable. Done updates the history item and its open card, if any.
     public func annotate(inboxID id: UUID) {
         if let card = cards.card(forInboxID: id) {
             annotate(card)
@@ -519,13 +468,10 @@ public final class CaptureFeature {
         }
     }
 
-    /// Opens the markup editor. Marks from an earlier edit stay editable.
     private func annotate(_ card: Card) {
         guard let current = card.cgImage else { return }
         var base = current
         var document = AnnotationDocument()
-        // Saved marks belong to this card only while its history file is still the flat image of those
-        // marks. Otherwise they are from another shot, so start fresh from what the card shows.
         if let id = card.inboxID, inbox.fileData(for: id) == card.png,
            let saved = MarkupStore.load(from: inbox.markupURL(for: id)) {
             (base, document) = saved
@@ -624,7 +570,6 @@ public final class CaptureFeature {
             card.update(image: Self.image(result, pointSize: pointSize), png: png)
             if let id = card.inboxID {
                 inbox.updateFile(id, data: png)
-                // The old marks were for the image without the background. Start markup fresh from this one.
                 try? FileManager.default.removeItem(at: inbox.markupURL(for: id))
             }
         } onClose: { [weak self] in

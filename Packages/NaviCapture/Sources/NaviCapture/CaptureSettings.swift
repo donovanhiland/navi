@@ -1,18 +1,15 @@
 import Foundation
 import Observation
 
-/// Capture settings, kept in `UserDefaults`.
 @MainActor
 @Observable
 public final class CaptureSettings {
     @ObservationIgnored private let defaults: UserDefaults
 
-    /// Leave Finder's desktop icons out of every capture. The real desktop does not change.
     public var hideDesktopIcons: Bool {
         didSet { defaults.set(hideDesktopIcons, forKey: Keys.hideDesktopIcons) }
     }
 
-    /// Navi's own save folder. Nil follows the macOS screenshot folder, then the Desktop.
     public var saveFolderOverride: URL? {
         didSet {
             if let saveFolderOverride {
@@ -23,7 +20,6 @@ public final class CaptureSettings {
         }
     }
 
-    /// Where Save puts files: the override if set, else the macOS screenshot folder, else the Desktop.
     public var saveFolder: URL {
         get {
             SaveFolder.resolve(
@@ -39,23 +35,18 @@ public final class CaptureSettings {
         set { saveFolderOverride = newValue }
     }
 
-    /// Put every screenshot on the clipboard as soon as it is taken, and again after markup. Default: on.
     public var copyToClipboard: Bool {
         didSet { defaults.set(copyToClipboard, forKey: Keys.copyToClipboard) }
     }
 
-    /// After an area shot, stay on the frozen screen and mark up the area in place. Return copies
-    /// it to the clipboard and adds it to the history; no corner card. Default: off.
     public var editAfterCapture: Bool {
         didSet { defaults.set(editAfterCapture, forKey: Keys.editAfterCapture) }
     }
 
-    /// Seconds before a corner card closes on its own. 0 means never.
     public var autoCloseSeconds: Double {
         didSet { defaults.set(autoCloseSeconds, forKey: Keys.autoCloseSeconds) }
     }
 
-    /// Navi owns `⇧⌘3` and `⇧⌘4` and turns the macOS ones off while it runs. Nil until the user picks.
     public var useNaviScreenshotKeys: Bool? {
         didSet { defaults.set(useNaviScreenshotKeys, forKey: Keys.useNaviScreenshotKeys) }
     }

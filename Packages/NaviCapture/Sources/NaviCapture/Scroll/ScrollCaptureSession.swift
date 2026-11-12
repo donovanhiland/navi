@@ -1,11 +1,9 @@
 import AppKit
 import SwiftUI
 
-/// Scrolling capture: grabs the area again and again while you scroll, then joins the frames.
 @MainActor
 final class ScrollCaptureSession {
     private let screen: NSScreen
-    /// Display-local points, origin at the top left.
     private let rect: CGRect
     private let hideDesktopIcons: Bool
     private let completion: (CGImage?, CGFloat) -> Void
@@ -35,8 +33,6 @@ final class ScrollCaptureSession {
         }
     }
 
-    // MARK: Loop
-
     private func tick() async {
         guard let captured = try? await ScreenGrabber.capture(screen, rect: rect, hideDesktopIcons: hideDesktopIcons) else { return }
         scale = captured.scale
@@ -56,7 +52,6 @@ final class ScrollCaptureSession {
         if status.autoScroll { scrollDown() }
     }
 
-    /// Sends a scroll wheel event over the middle of the area.
     private func scrollDown() {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let global = CGPoint(x: screen.frame.minX + rect.midX, y: primaryHeight - screen.frame.maxY + rect.midY)
@@ -64,8 +59,6 @@ final class ScrollCaptureSession {
         event?.location = global
         event?.post(tap: .cghidEventTap)
     }
-
-    // MARK: Windows
 
     private func showOutline() {
         let frame = CGRect(
@@ -156,7 +149,6 @@ private struct ScrollControls: View {
     }
 }
 
-/// A big countdown number in the middle of the screen, for the self-timer.
 @MainActor
 enum Countdown {
     static func run(seconds: Int, on screen: NSScreen?) async {
@@ -190,7 +182,6 @@ enum Countdown {
             try? await Task.sleep(for: .seconds(1))
         }
         panel.orderOut(nil)
-        // Let the window server remove the panel before the shot.
         try? await Task.sleep(for: .milliseconds(80))
     }
 }

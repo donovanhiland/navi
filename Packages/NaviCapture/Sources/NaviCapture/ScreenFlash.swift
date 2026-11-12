@@ -1,7 +1,5 @@
 import AppKit
 
-/// After a fullscreen capture, shows the shot over the display and closes it. macOS animates the
-/// close as a small shrink, the same "bump" the selection overlay gets when it closes.
 @MainActor
 enum ScreenFlash {
     static func show(_ captured: CapturedImage, on screen: NSScreen) {

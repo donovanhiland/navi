@@ -19,10 +19,8 @@ struct FnGestureTests {
         #expect(gesture.handle(fnDown: false, othersHeld: false, at: 1.10).isEmpty)
         #expect(gesture.handle(fnDown: true, othersHeld: false, at: 1.30) == [.lock])
         #expect(gesture.isLocked)
-        // Release of the second tap does nothing.
         #expect(gesture.handle(fnDown: false, othersHeld: false, at: 1.40).isEmpty)
         #expect(gesture.isLocked)
-        // One more tap ends it. The commit comes on release.
         #expect(gesture.handle(fnDown: true, othersHeld: false, at: 5.0).isEmpty)
         #expect(gesture.handle(fnDown: false, othersHeld: false, at: 5.1) == [.commit])
         #expect(!gesture.isActive)
@@ -55,7 +53,6 @@ struct FnGestureTests {
         #expect(gesture.handle(fnDown: true, othersHeld: true, at: 1.0).isEmpty)
         #expect(!gesture.isActive)
         #expect(gesture.handle(fnDown: false, othersHeld: false, at: 1.5).isEmpty)
-        // After release, a plain press works again.
         #expect(gesture.handle(fnDown: true, othersHeld: false, at: 2.0) == [.begin])
     }
 
@@ -84,7 +81,6 @@ struct FnGestureTests {
         #expect(gesture.handle(fnDown: true, othersHeld: false, at: 1.0) == [.begin])
         #expect(gesture.keyPressed() == [.cancel])
         #expect(!gesture.isActive)
-        // Releasing fn after the chord does nothing.
         #expect(gesture.handle(fnDown: false, othersHeld: false, at: 1.5).isEmpty)
         #expect(gesture.handle(fnDown: true, othersHeld: false, at: 3.0) == [.begin])
     }

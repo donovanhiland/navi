@@ -3,19 +3,12 @@ import Testing
 
 @testable import NaviCapture
 
-/// Drives the real selection overlay with mouse events over a drawn desktop: a click on the
-/// spotlighted window picks it, a drag selects an area. Needs a display (any Mac session).
-///
-/// With NAVI_SNAPSHOTS=<folder>, it also writes a PNG per frame of a scripted hover, click, and
-/// drag (`spotlight-*.png`), to check the look or make a video:
-/// NAVI_SNAPSHOTS=/tmp/navi-snaps swift test --filter WindowSpotlight
 @MainActor
 @Suite(.enabled(if: !NSScreen.screens.isEmpty))
 struct WindowSpotlightTests {
     private static let size = CGSize(width: 1440, height: 900)
     private static let scale: CGFloat = 2
 
-    /// Fake app windows, front to back, in view coordinates (origin bottom left).
     private static let windows: [(id: CGWindowID, name: String, frame: CGRect, tint: CGColor)] = [
         (3, "Finder", CGRect(x: 900, y: 226, width: 480, height: 610), CGColor(srgbRed: 0.97, green: 0.97, blue: 0.98, alpha: 1)),
         (2, "Terminal", CGRect(x: 560, y: 80, width: 640, height: 400), CGColor(srgbRed: 0.05, green: 0.06, blue: 0.08, alpha: 1)),
@@ -77,7 +70,6 @@ struct WindowSpotlightTests {
             Issue.record("Expected an area, got \(String(describing: rig.outcome()))")
             return
         }
-        // The pixels under both corners are inside: 400 pixels apart plus the end pixel, at 2x.
         #expect(rect.width == 200.5)
         #expect(rect.height == 200.5)
     }
@@ -89,8 +81,6 @@ struct WindowSpotlightTests {
         rig.view.mouseUp(with: event(.leftMouseUp, at: point))
         if let outcome = rig.outcome() { Issue.record("Expected nothing, got \(outcome)") }
     }
-
-    // MARK: Frames
 
     @Test(.enabled(if: ProcessInfo.processInfo.environment["NAVI_SNAPSHOTS"] != nil))
     func frames() throws {
@@ -126,7 +116,6 @@ struct WindowSpotlightTests {
         }
         func hold(_ rig: Rig, frames count: Int) throws { for _ in 0..<count { try frame(rig) } }
 
-        // Hover across the desktop and three windows, then click the front one.
         let hover = makeRig()
         try glide(hover, to: CGPoint(x: 360, y: 140), frames: 1)
         try hold(hover, frames: 12)
@@ -143,7 +132,6 @@ struct WindowSpotlightTests {
             return
         }
 
-        // Drag inside Safari: the spotlight goes away and an area forms. Edges snap to windows.
         let drag = makeRig()
         mouse = CGPoint(x: 240, y: 680)
         try glide(drag, to: mouse, frames: 1)
@@ -152,8 +140,6 @@ struct WindowSpotlightTests {
         try glide(drag, to: CGPoint(x: 826, y: 430), frames: 36, dragging: true)
         try hold(drag, frames: 30)
     }
-
-    // MARK: Drawing the desktop
 
     private static func drawCursor(at point: CGPoint) {
         let path = NSBezierPath()
@@ -169,7 +155,6 @@ struct WindowSpotlightTests {
         path.stroke()
     }
 
-    /// A desktop picture with the fake windows on it, at 2x, back to front.
     private static func desktop() -> CGImage {
         let width = Int(size.width * scale), height = Int(size.height * scale)
         let context = CGContext(
@@ -184,7 +169,6 @@ struct WindowSpotlightTests {
         ] as CFArray
         let gradient = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors, locations: [0, 0.55, 1])!
         context.drawLinearGradient(gradient, start: CGPoint(x: 0, y: size.height), end: CGPoint(x: size.width, y: 0), options: [])
-        // Menu bar.
         context.setFillColor(CGColor(srgbRed: 0.12, green: 0.11, blue: 0.16, alpha: 0.85))
         context.fill(CGRect(x: 0, y: size.height - 28, width: size.width, height: 28))
         for window in windows.reversed() { drawWindow(window.frame, tint: window.tint, in: context) }
@@ -216,7 +200,6 @@ struct WindowSpotlightTests {
             context.setFillColor(light)
             context.fillEllipse(in: CGRect(x: frame.minX + 14 + CGFloat(i) * 20, y: titleBar.midY - 6, width: 12, height: 12))
         }
-        // Content: rows of text-like bars.
         context.setFillColor(dark ? CGColor(gray: 1, alpha: 0.12) : CGColor(gray: 0, alpha: 0.1))
         var y = titleBar.minY - 40
         var row = 0

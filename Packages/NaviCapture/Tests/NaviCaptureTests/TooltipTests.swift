@@ -43,7 +43,6 @@ struct TooltipTests {
         #expect(tips.activeID == nil)
     }
 
-    /// Waits up to two seconds for `condition`, since other tests share the main actor.
     private func eventually(_ condition: () -> Bool) async -> Bool {
         for _ in 0..<100 {
             if condition() { return true }

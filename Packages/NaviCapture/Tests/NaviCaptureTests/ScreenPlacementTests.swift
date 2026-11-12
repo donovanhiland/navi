@@ -2,7 +2,6 @@ import CoreGraphics
 import Testing
 @testable import NaviCapture
 
-/// Edit after capture: changing the captured area's frame on the frozen screen. All top-left (y down).
 @Suite struct FrameHandleTests {
     private static let rect = CGRect(x: 100, y: 100, width: 200, height: 100)
 
@@ -36,7 +35,6 @@ import Testing
         let tab = FrameAdjuster.moveTabZone(of: frame)
         #expect(tab.maxY < frame.minY - FrameAdjuster.grab)
         #expect(tab.midX == frame.midX)
-        // The middle of the top edge resizes, it does not move.
         #expect(CaptureGeometry.frameHandle(of: frame, near: CGPoint(x: frame.midX, y: frame.minY - 3), tolerance: FrameAdjuster.grab) == .top)
         #expect(!tab.contains(CGPoint(x: frame.midX, y: frame.minY - FrameAdjuster.grab)))
     }
@@ -101,7 +99,6 @@ import Testing
         let moved = try #require(Self.placement.reframed(to: CGRect(x: 90, y: 60, width: 250, height: 100), screenPixels: screen))
         #expect(moved.placement.source == CGRect(x: 180, y: 120, width: 500, height: 200))
         #expect(moved.placement.origin == CGPoint(x: 90, y: 60))
-        // The marks stay on the same screen pixels: the base starts 20 px further left, 20 px lower.
         #expect(moved.shift == CGVector(dx: 20, dy: -20))
     }
 
@@ -119,7 +116,6 @@ import Testing
 
 @MainActor
 @Suite struct AnnotateModelReframeTests {
-    /// A 1000 × 600 pixel screen at scale 2, the capture is its 200 × 100 pixel piece at (100, 100).
     private static func screen() -> CGImage {
         let context = CGContext(
             data: nil, width: 1000, height: 600, bitsPerComponent: 8, bytesPerRow: 0,

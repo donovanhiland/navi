@@ -1,7 +1,6 @@
 import CoreGraphics
 import Foundation
 
-/// Tools in the markup editor.
 public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
     case select, arrow, rectangle, filledRectangle, ellipse, line, pencil, highlighter
     case text, counter, blur, pixelate, spotlight, crop
@@ -44,7 +43,6 @@ public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// The single key that picks this tool in the markup editor, like CleanShot X.
     var shortcut: Character {
         switch self {
         case .select: "v"
@@ -64,13 +62,11 @@ public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// The tool for a key press without modifiers, or nil.
     static func forShortcut(_ key: String) -> AnnotationTool? {
         guard key.count == 1, let character = key.lowercased().first else { return nil }
         return allCases.first { $0.shortcut == character }
     }
 
-    /// The name, and what the tool does when that is not clear from the name. VoiceOver reads it.
     var help: String {
         switch self {
         case .select: "Select: click a mark to move it, drag its handles to resize it"
@@ -83,7 +79,6 @@ public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
         }
     }
 
-    /// Tools that make a mark from a drag.
     var dragsShape: Bool {
         switch self {
         case .select, .text, .counter, .crop: false
@@ -92,7 +87,6 @@ public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
     }
 }
 
-/// A color that can be saved.
 public struct RGBA: Codable, Hashable, Sendable {
     public var red, green, blue, alpha: Double
 
@@ -108,7 +102,6 @@ public struct RGBA: Codable, Hashable, Sendable {
     public static let red = RGBA(red: 0.96, green: 0.23, blue: 0.23)
 }
 
-/// One mark on the image. Points are in image pixels, origin at the top left.
 public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case arrow, rectangle, filledRectangle, ellipse, line, pencil, highlighter
@@ -119,17 +112,14 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     public var kind: Kind
     public var start: CGPoint
     public var end: CGPoint
-    /// Freehand points, for pencil and highlighter.
     public var points: [CGPoint] = []
     public var color: RGBA
     public var lineWidth: Double
     public var text: String?
     public var number: Int?
     public var fontSize: Double = 32
-    /// PNG of a combined image.
     public var imagePNG: Data?
 
-    /// The area the mark covers, used to select it.
     public var bounds: CGRect {
         switch kind {
         case .pencil, .highlighter:
@@ -152,13 +142,9 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    /// A part of a mark you can drag to resize it.
     public enum Handle: CaseIterable, Sendable {
-        /// The two ends of a line, or two corners of a box.
         case start, end
-        /// The two other corners of a box: (start.x, end.y) and (end.x, start.y).
         case startXEndY, endXStartY
-        /// The four edges of a box. Grab anywhere along the edge.
         case top, bottom, left, right
 
         public var isEdge: Bool {
@@ -169,7 +155,6 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Kinds that are a box between `start` and `end`.
     public var isBox: Bool {
         switch kind {
         case .rectangle, .filledRectangle, .ellipse, .blur, .pixelate, .spotlight, .image: true
@@ -177,18 +162,14 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    /// Handles for this mark. Lines and arrows have their two ends; boxes have four corners and four edges.
-    /// Freehand marks, text, and counters have none (they move, and the size picker changes them).
     public var handles: [Handle] {
         if isBox { return Handle.allCases }
         if kind == .arrow || kind == .line { return [.start, .end] }
         return []
     }
 
-    /// The box of a box mark, as drawn.
     public var box: CGRect { CaptureGeometry.rect(from: start, to: end) }
 
-    /// Where a handle is drawn. Edges are drawn at their middle.
     public func point(of handle: Handle) -> CGPoint {
         switch handle {
         case .start: start
@@ -202,7 +183,6 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
-    /// The handle within `tolerance` of `point`, if any. Corners and ends win over edges.
     public func handle(at point: CGPoint, tolerance: Double) -> Handle? {
         let corner = handles.filter { !$0.isEdge }.first {
             hypot(self.point(of: $0).x - point.x, self.point(of: $0).y - point.y) <= tolerance
@@ -219,11 +199,9 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         return nil
     }
 
-    /// The same mark with `handle` moved to `point`. The opposite corner, end, or edge stays put.
     public func resized(_ handle: Handle, to point: CGPoint) -> Annotation {
         var copy = self
         if handle.isEdge {
-            // Edges work on the box with `start` at the top left.
             copy.start = CGPoint(x: box.minX, y: box.minY)
             copy.end = CGPoint(x: box.maxX, y: box.maxY)
         }
@@ -244,15 +222,12 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         return copy
     }
 
-    /// Text and counters grow with the size picker; everything else gets a thicker line.
     public var usesFontSize: Bool { kind == .text || kind == .counter }
 
-    /// The same mark moved by `offset`.
     public func moved(by offset: CGVector) -> Annotation {
         applying(CGAffineTransform(translationX: offset.dx, y: offset.dy), scale: 1)
     }
 
-    /// The same mark with every point transformed. `scale` changes line widths and font sizes.
     public func applying(_ transform: CGAffineTransform, scale: Double) -> Annotation {
         var copy = self
         copy.start = start.applying(transform)
@@ -264,38 +239,31 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
-/// The editable markup: the marks and the next counter number. The base image is kept beside it.
 public struct AnnotationDocument: Codable, Equatable, Sendable {
     public var annotations: [Annotation] = []
     public var nextCounter = 1
 
     public init() {}
 
-    /// The top mark under `point`, if any.
     public func hit(_ point: CGPoint, tolerance: Double) -> Annotation? {
         annotations.last { $0.bounds.insetBy(dx: -tolerance, dy: -tolerance).contains(point) }
     }
 
-    /// Moves every mark with an image change, such as rotate, flip, crop, or resize.
     public mutating func apply(_ transform: CGAffineTransform, scale: Double = 1) {
         annotations = annotations.map { $0.applying(transform, scale: scale) }
     }
 }
 
-/// Image-wide changes. Each one gives the transform for marks and the new image size.
 public enum ImageEdit: Equatable, Sendable {
     case rotateClockwise, rotateCounterclockwise, flipHorizontal, flipVertical
     case crop(CGRect)
     case resize(Double)
 
-    /// The transform for points in the old image, and the size of the new image.
     public func transform(for size: CGSize) -> (CGAffineTransform, CGSize) {
         switch self {
         case .rotateClockwise:
-            // (x, y) → (h − y, x)
             return (CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: size.height, ty: 0), CGSize(width: size.height, height: size.width))
         case .rotateCounterclockwise:
-            // (x, y) → (y, w − x)
             return (CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: size.width), CGSize(width: size.height, height: size.width))
         case .flipHorizontal:
             return (CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: size.width, ty: 0), size)
@@ -317,7 +285,6 @@ public enum ImageEdit: Equatable, Sendable {
     }
 }
 
-/// Undo and redo for any value.
 public struct UndoStack<Value> {
     private var past: [Value] = []
     private var future: [Value] = []
@@ -327,7 +294,6 @@ public struct UndoStack<Value> {
     public var canUndo: Bool { !past.isEmpty }
     public var canRedo: Bool { !future.isEmpty }
 
-    /// Call before a change, with the value before the change.
     public mutating func record(_ value: Value) {
         past.append(value)
         future.removeAll()

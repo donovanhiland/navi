@@ -4,22 +4,14 @@ import Testing
 
 @testable import NaviCapture
 
-/// Records the toolbar tooltips as PNG frames, for the pull request video. It draws the real
-/// markup editor off screen, moves a drawn cursor along the toolbar, and sends the same hover
-/// events to `TooltipCenter` that the buttons send. Off by default. Run:
-/// NAVI_TOOLTIP_FRAMES=<folder> swift test --filter TooltipDemo
-/// then: ffmpeg -framerate 30 -i <folder>/frame-%04d.png …
 @MainActor
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["NAVI_TOOLTIP_FRAMES"] != nil))
 struct TooltipDemoTests {
     static let windowSize = CGSize(width: 1000, height: 560)
     static let fps = 30.0
-    /// The toolbar row's center, in points from the window's top (below the title bar).
     static let rowY: CGFloat = 55
-    /// The part of the window that is recorded: the toolbar and room for the tips under it.
     static let recordedHeight: CGFloat = 160
 
-    /// Toolbar buttons: center x in points from the window's left, and their tip.
     static let buttons: [(x: CGFloat, tip: Tip)] = {
         let tools: [(CGFloat, AnnotationTool)] = [
             (94, .select), (122, .arrow), (151, .rectangle), (180, .filledRectangle), (209, .ellipse),
@@ -35,18 +27,17 @@ struct TooltipDemoTests {
         return list
     }()
 
-    /// Where the cursor goes, and how long it takes to get there (seconds).
     static let path: [(point: CGPoint, travel: Double, pause: Double)] = {
         var path: [(CGPoint, Double, Double)] = [(CGPoint(x: 330, y: 140), 0, 0.4)]
-        path.append((CGPoint(x: 122, y: rowY), 0.5, 1.1)) // the first tip waits, then fades in
+        path.append((CGPoint(x: 122, y: rowY), 0.5, 1.1))
         for x: CGFloat in [151, 180, 209, 239, 268, 296, 325, 354, 396, 426, 454, 484] {
-            path.append((CGPoint(x: x, y: rowY), 0.16, 0.3)) // then glides from button to button
+            path.append((CGPoint(x: x, y: rowY), 0.16, 0.3))
         }
         for x: CGFloat in [526, 555, 584, 613, 640, 684, 713] {
             path.append((CGPoint(x: x, y: rowY), 0.2, 0.45))
         }
-        path.append((CGPoint(x: 600, y: 140), 0.45, 1.0)) // leave: it fades out
-        path.append((CGPoint(x: 325, y: rowY), 0.5, 1.4)) // a fresh hover waits again
+        path.append((CGPoint(x: 600, y: 140), 0.45, 1.0))
+        path.append((CGPoint(x: 325, y: rowY), 0.5, 1.4))
         path.append((CGPoint(x: 400, y: 140), 0.45, 0.8))
         return path.map { (point: $0.0, travel: $0.1, pause: $0.2) }
     }()
@@ -74,7 +65,6 @@ struct TooltipDemoTests {
         let start = Date.now
         for frame in 0..<Int(duration * Self.fps) {
             let time = Double(frame) / Self.fps
-            // Give the main actor back, so the tooltip's own timers and animations run.
             let wait = start.addingTimeInterval(time).timeIntervalSinceNow
             if wait > 0 { try await Task.sleep(for: .seconds(wait)) } else { await Task.yield() }
             let point = Self.cursorPoint(at: time)
@@ -103,7 +93,6 @@ struct TooltipDemoTests {
         window.close()
     }
 
-    /// The cursor eases from one point of `path` to the next, then rests.
     private static func cursorPoint(at time: Double) -> CGPoint {
         var elapsed = 0.0
         var from = path[0].point
@@ -121,7 +110,6 @@ struct TooltipDemoTests {
         return from
     }
 
-    /// A calm made-up picture: a soft gradient with a few cards.
     private static func demoPicture() throws -> CGImage {
         let width = 1800, height = 900
         let context = try #require(CGContext(

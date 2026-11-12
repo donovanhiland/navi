@@ -2,24 +2,15 @@ import AppKit
 import Carbon.HIToolbox
 import NaviCore
 
-/// A full-screen selection, one overlay window per display. The overlay shows at once over the live
-/// screen; the frozen screen images arrive a moment later (`freeze`) and are what gets cropped.
-///
-/// Area mode: drag a box. Edges snap to window edges. A magnifier shows the pixels under the cursor.
-/// For screenshots and recordings, area mode also spotlights the window under the cursor: a click
-/// (less than `OverlayView.clickSlop` of movement) picks that window, a drag selects an area.
-/// Window mode: hover to highlight a window, click to pick it. Space switches modes. Esc cancels.
 @MainActor
 final class SelectionSession {
     enum Mode { case area, window }
 
-    /// What happens with the picked area or window.
     enum Purpose: Equatable {
         case screenshot, text, scroll, record
     }
 
     enum Outcome {
-        /// `rect` is the selection in display-local points with the origin at the top left.
         case area(CapturedImage, NSScreen, rect: CGRect)
         case window(CGWindowID, NSScreen)
         case fullscreen(NSScreen)
@@ -31,31 +22,20 @@ final class SelectionSession {
         didSet {
             if purpose == .text || purpose == .scroll { mode = .area }
             refresh()
-            // Record picked with an area already held: go straight to the record bar. Its
-            // Record Video and Record GIF buttons are the one place that starts a recording.
             if purpose == .record, oldValue != .record, hasHeldSelection { confirmHeldSelection() }
         }
     }
 
-    /// Seconds to wait before the shot. 0 is off.
     var timer = 0
-    /// Shows the all-in-one bar with every mode.
     var showsModeBar = false
     var canRecord = false
-    /// All-in-one: an area stays on screen after the drag, so it can be moved, resized, and then
-    /// captured from the bar (or with Return), or handed to the record bar by picking Record.
-    /// Otherwise the drag ends the selection. In Record mode the drag goes straight to the record bar.
     var holdsSelection = false
-    /// The overlay that holds the finished area, while `holdsSelection` is on.
     private weak var heldOverlay: OverlayView?
     var hasHeldSelection: Bool { heldOverlay != nil }
     private var modeBar: ModeBarPanel?
-    /// App windows in Cocoa global coordinates, front to back.
     let windows: [OnScreenWindow]
     private var overlays: [OverlayWindow] = []
     private var keyMonitor: Any?
-    /// Esc, Space, and Return as Carbon hot keys while the overlay is up. macOS may refuse to make
-    /// Navi the active app, and then no key event reaches the overlay or the local monitor.
     private var sessionKeys: [HotKey] = []
     private var completion: ((Outcome) -> Void)?
 
@@ -69,7 +49,6 @@ final class SelectionSession {
         for overlay in overlays { overlay.overlayView.session = self }
     }
 
-    /// Gives each overlay its frozen screen image.
     func freeze(_ images: [(NSScreen, CapturedImage)]) {
         for (screen, captured) in images {
             overlays.first { $0.overlayView.screen == screen }?.overlayView.captured = captured
@@ -83,7 +62,6 @@ final class SelectionSession {
             if overlay.overlayView.screen == mouseScreen {
                 overlay.makeKey()
                 overlay.makeFirstResponder(overlay.overlayView)
-                // Show the hint and the magnifier now, not after the first mouse move.
                 overlay.overlayView.placeMouse(at: NSEvent.mouseLocation)
             }
         }
@@ -123,7 +101,6 @@ final class SelectionSession {
         refresh()
     }
 
-    /// An overlay now holds an area (or nil: it let go of it). Only one display holds an area.
     func holdChanged(_ overlay: OverlayView?) {
         if let overlay {
             for other in overlays where other.overlayView !== overlay { other.overlayView.resetDrag() }
@@ -132,12 +109,10 @@ final class SelectionSession {
         refresh()
     }
 
-    /// Captures, records, or reads the held area, by the purpose picked in the bar.
     func confirmHeldSelection() {
         heldOverlay?.finishSelection()
     }
 
-    /// The text that tells the user what to do now.
     var hint: String {
         if hasHeldSelection {
             let verb = switch purpose {
@@ -167,17 +142,12 @@ final class SelectionSession {
         }
     }
 
-    /// The in-place editor takes over from the overlay on a finished area, so the overlay stays up
-    /// until then (hiding it first would flash the live screen).
     var keepsOverlayUntilDone = false
 
-    /// Takes the overlays and the bar off the screen at once, when the area is done. The session
-    /// still waits for its frozen images.
     func hideEarly() {
         guard !keepsOverlayUntilDone else { return }
         for overlay in overlays { overlay.orderOut(nil) }
         modeBar?.orderOut(nil)
-        // Send the change to the window server now, not at the end of this run loop pass.
         CATransaction.flush()
     }
 
@@ -186,7 +156,6 @@ final class SelectionSession {
         keyMonitor = nil
         for key in sessionKeys { key.unregister() }
         sessionKeys = []
-        // Esc: just go away. The macOS close animation is only for a finished shot.
         if case .cancelled = outcome {
             for overlay in overlays { overlay.animationBehavior = .none }
             modeBar?.animationBehavior = .none
@@ -201,8 +170,6 @@ final class SelectionSession {
     }
 }
 
-/// A non-activating panel: it takes the keys (Esc, Space) and the mouse without bringing Navi to the
-/// front, so other Navi windows (an open markup editor) stay where they are.
 final class OverlayWindow: NSPanel {
     let overlayView: OverlayView
 
@@ -213,15 +180,12 @@ final class OverlayWindow: NSPanel {
         becomesKeyOnlyIfNeeded = false
         setFrame(screen.frame, display: false)
         level = .screenSaver
-        // Clear until the frozen image arrives, so the live screen shows through at once.
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         isReleasedWhenClosed = false
         acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        // The frozen screen is the container's layer content, so the GPU shows it and `draw` only
-        // paints the dimming, the box, and the pills on top.
         let container = NSView(frame: CGRect(origin: .zero, size: screen.frame.size))
         container.wantsLayer = true
         container.layer?.contentsGravity = .resize
@@ -237,7 +201,6 @@ final class OverlayWindow: NSPanel {
 final class OverlayView: NSView {
     weak var session: SelectionSession?
     let screen: NSScreen
-    /// The frozen screen. Nil for the first moment, while it is being taken.
     var captured: CapturedImage? {
         didSet {
             superview?.layer?.contents = captured?.image
@@ -248,22 +211,18 @@ final class OverlayView: NSView {
         }
     }
 
-    /// A selection finished before the frozen image arrived. It runs when the image comes.
     private var pendingFinish: (() -> Void)?
 
     private var mouse: CGPoint?
     private var dragStart: CGPoint?
     private var dragCurrent: CGPoint?
-    /// Where the mouse went down for a new area, and whether it has since moved past `clickSlop`.
     private var pressPoint: CGPoint?
     private var dragBegan = false
-    /// Movement under this many points is a click on the highlighted window, not a drag.
     static let clickSlop: CGFloat = 5
     private let highlight = WindowHighlight()
 
     private static let dim = NSColor.black.withAlphaComponent(0.35)
 
-    /// Window mode cursor: a camera, like the macOS screenshot tool. Black symbol with a white outline.
     static let cameraCursor: NSCursor = {
         let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
         guard let symbol = NSImage(systemSymbolName: "camera.fill", accessibilityDescription: "Camera")?
@@ -313,7 +272,6 @@ final class OverlayView: NSView {
         return CGSize(width: bounds.width * screen.backingScaleFactor, height: bounds.height * screen.backingScaleFactor)
     }
 
-    /// Backup for the session's key monitor: the key overlay also gets the keys directly.
     override func keyDown(with event: NSEvent) {
         switch Int(event.keyCode) {
         case kVK_Escape: session?.finish(.cancelled)
@@ -334,13 +292,9 @@ final class OverlayView: NSView {
         needsDisplay = true
     }
 
-    /// True while this overlay holds a finished area (all-in-one only).
     private var isHolding = false
-    /// Where a move of the held area started, and the area at that moment.
     private var moveStart: (point: CGPoint, rect: CGRect)?
     private static let cornerGrab: CGFloat = 10
-
-    // MARK: Mouse
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -365,7 +319,6 @@ final class OverlayView: NSView {
         needsDisplay = true
     }
 
-    /// Sets the mouse from a point in screen coordinates, before any mouse event arrives.
     func placeMouse(at screenPoint: CGPoint) {
         guard let window else { return }
         let point = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
@@ -382,14 +335,11 @@ final class OverlayView: NSView {
         needsDisplay = true
     }
 
-    /// Area mode spotlights the window under the cursor for screenshots and recordings, until an
-    /// area drag begins or an area is held.
     private var picksHoveredWindow: Bool {
         guard mode == .area, !isHolding, moveStart == nil else { return false }
         return session?.purpose == .screenshot || session?.purpose == .record
     }
 
-    /// The window a click would pick now.
     private var clickTarget: OnScreenWindow? {
         guard picksHoveredWindow, !dragBegan, let point = pressPoint ?? mouse else { return nil }
         return hoveredWindow(at: point)
@@ -420,7 +370,6 @@ final class OverlayView: NSView {
         case .area:
             if isHolding, let selection {
                 if let anchor = CaptureGeometry.oppositeCorner(of: selection, near: point, tolerance: Self.cornerGrab) {
-                    // Resize: keep the far corner, drag this one.
                     dragStart = anchor
                     dragCurrent = point
                     needsDisplay = true
@@ -431,7 +380,6 @@ final class OverlayView: NSView {
                     NSCursor.closedHand.set()
                     return
                 }
-                // Outside the held area: start a new one.
                 session?.holdChanged(nil)
                 isHolding = false
             }
@@ -467,7 +415,6 @@ final class OverlayView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         if mode == .area, pressPoint != nil, !dragBegan, picksHoveredWindow {
-            // A click, not a drag: capture the highlighted window, or nothing on the desktop.
             let target = clickTarget
             resetDrag()
             if let target {
@@ -486,7 +433,6 @@ final class OverlayView: NSView {
             return
         }
         if session?.holdsSelection == true {
-            // All-in-one: keep the area until the bar or Return says what to do with it.
             isHolding = true
             session?.holdChanged(self)
             cursor(at: location(of: event)).set()
@@ -495,11 +441,9 @@ final class OverlayView: NSView {
         finishSelection()
     }
 
-    /// Ends the session with the current area. It waits for the frozen screen when needed.
     func finishSelection() {
         guard mode == .area, let selection, selection.width >= 2, selection.height >= 2 else { return }
         resetDrag()
-        // Off the screen at once. The crop waits for the frozen image if it is not here yet.
         session?.hideEarly()
         let finish = { [weak self] in
             guard let self, let captured else { return }
@@ -517,27 +461,22 @@ final class OverlayView: NSView {
         return CGPoint(x: min(max(point.x, 0), bounds.width), y: min(max(point.y, 0), bounds.height))
     }
 
-    // MARK: Geometry
-
     private var selection: CGRect? {
         guard let dragStart, let dragCurrent else { return nil }
         return CaptureGeometry.rect(from: dragStart, to: dragCurrent)
     }
 
-    /// The area to draw. Hidden while a press on a window may still be a click.
     private var visibleSelection: CGRect? {
         if picksHoveredWindow, !dragBegan { return nil }
         return selection
     }
 
-    /// The visible selection as it will be cropped: whole pixels, with the pixels under both corners inside.
     private var croppedArea: CGRect? {
         guard let selection = visibleSelection else { return nil }
         let pixels = CaptureGeometry.pixelRect(forSelection: selection, viewSize: bounds.size, imageSize: imageSize)
         return CaptureGeometry.viewRect(forPixels: pixels, viewSize: bounds.size, imageSize: imageSize)
     }
 
-    /// App window frames in this view's coordinates, front to back.
     private var localWindows: [OnScreenWindow] {
         let origin = screen.frame.origin
         return (session?.windows ?? []).map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
@@ -551,15 +490,12 @@ final class OverlayView: NSView {
         CaptureGeometry.snap(point, toWindows: localWindows.map(\.frame), bounds: bounds, tolerance: 6)
     }
 
-    /// The point the magnifier shows: where a drag starts or ends now, so it matches the crop.
     private var magnifierPoint: CGPoint? {
         guard let mouse else { return nil }
         if moveStart != nil || isHolding && dragStart == nil { return mouse }
         if let dragCurrent, dragStart != nil { return dragCurrent }
         return snapped(mouse)
     }
-
-    // MARK: Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -606,7 +542,6 @@ final class OverlayView: NSView {
         if mouse != nil { drawModeTag() }
     }
 
-    /// Round handles on the held area's corners: drag one to resize.
     private func drawCornerHandles(of rect: CGRect, in context: CGContext) {
         let size: CGFloat = 8
         for corner in [
@@ -654,7 +589,6 @@ final class OverlayView: NSView {
         context.setFillColor(NSColor.black.cgColor)
         context.fill(frame)
         if let crop = image.cropping(to: source) {
-            // `cropping` clips at the image edge. Place the crop so the cursor pixel stays in the center.
             let dx = CGFloat(max(0, -source.minX)) * cell
             let dy = CGFloat(max(0, -source.minY)) * cell
             let drawRect = CGRect(

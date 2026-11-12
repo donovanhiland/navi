@@ -2,9 +2,7 @@ import AppKit
 import NaviCore
 import Vision
 
-/// On-device text and QR code reading with the Vision framework.
 enum TextRecognizer {
-    /// Text lines in reading order, then any QR or barcode payloads.
     static func recognize(_ image: CGImage) async -> String {
         await Task.detached(priority: .userInitiated) {
             let text = VNRecognizeTextRequest()
@@ -20,14 +18,12 @@ enum TextRecognizer {
         }.value
     }
 
-    /// Joins text and code payloads with line breaks, without duplicates.
     static func joined(lines: [String], payloads: [String]) -> String {
         var seen = Set<String>()
         return (lines + payloads).filter { seen.insert($0).inserted }.joined(separator: "\n")
     }
 }
 
-/// Pasteboard writes for capture extras, marked so the clipboard watcher skips them.
 @MainActor
 enum NaviPasteboardBridge {
     static func write(_ image: NSImage) {
@@ -42,7 +38,6 @@ enum NaviPasteboardBridge {
     }
 }
 
-/// A short message in a pill near the bottom of the screen.
 @MainActor
 enum Toast {
     private static var panel: NSPanel?

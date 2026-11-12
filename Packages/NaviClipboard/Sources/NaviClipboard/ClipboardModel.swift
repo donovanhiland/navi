@@ -3,7 +3,6 @@ import NaviCore
 import Observation
 import SwiftUI
 
-/// Sizes for the history panel. Row heights are fixed so the panel can size itself to fit.
 enum Metrics {
     static let width: CGFloat = 450
     static let headerHeight: CGFloat = 44
@@ -12,7 +11,6 @@ enum Metrics {
     static let listPadding: CGFloat = 5
     static let footerRowHeight: CGFloat = 24
     static let footerHeight: CGFloat = 1 + footerRowHeight * 2 + listPadding * 2
-    /// The largest image the preview card shows, in points.
     static let previewMaxWidth: CGFloat = 480
     static let previewMaxHeight: CGFloat = 360
 
@@ -21,7 +19,6 @@ enum Metrics {
     }
 }
 
-/// State for the history panel: the filter text, the selected row, and sizes.
 @MainActor
 @Observable
 public final class ClipboardModel {
@@ -32,39 +29,26 @@ public final class ClipboardModel {
     var selection = 0 {
         didSet { onSelectionChange?() }
     }
-    /// The tallest the list can be on the current screen.
     var maxListHeight: CGFloat = 600
 
     @ObservationIgnored var onSelectionChange: (() -> Void)?
-    /// The part of the list content that is in view, in content coordinates.
     @ObservationIgnored var visibleRect = CGRect.zero
-    /// Goes up on each open. The panel keeps one view, which scrolls to the top and focuses the search field on a change.
     private(set) var opens = 0
-    /// True when the mouse set the selection. The list scrolls to the selection only for the keyboard.
     @ObservationIgnored var selectedByHover = false
-    /// Mouse position at the last hover. Rows that move under a still mouse must not steal the selection.
     @ObservationIgnored var lastHoverLocation: CGPoint?
 
-    /// Keyed by item ID and content hash, so an edited capture shows its new image.
     @ObservationIgnored private let images = NSCache<NSString, NSImage>()
-    /// Thumbnails being decoded now, by cache key, so a prewarm and a row never decode the same image twice.
     @ObservationIgnored private var decoding: [NSString: Task<CGImage?, Never>] = [:]
-    /// Icons of the apps items were copied from, by bundle ID.
     @ObservationIgnored private var appIcons: [String: NSImage] = [:]
-    /// The last search and what it was made from.
     @ObservationIgnored private var lastSearch: (query: String, items: Int, keys: Int, results: [CaptureItem])?
 
-    /// Creates the state for the history panel, reading from `inbox`.
     public init(inbox: Inbox) {
         self.inbox = inbox
     }
 
-    /// The items that match the query, in display order. The last search is reused until the query or the history changes.
     public var results: [CaptureItem] {
-        // Read the inputs every time, so a caller that observes `results` still tracks them.
         let query = self.query
         _ = inbox.items
-        // Read before the search, which reads the keys version too.
         let items = inbox.itemsVersion, keys = inbox.searchKeysVersion
         if let lastSearch, lastSearch.query == query, lastSearch.items == items, lastSearch.keys == keys {
             return lastSearch.results
@@ -94,14 +78,12 @@ public final class ClipboardModel {
         Metrics.headerHeight + listHeight(for: results) + Metrics.footerHeight
     }
 
-    /// Top and bottom of the row at `index`, in list content coordinates. Row heights are fixed.
     private func rowSpan(at index: Int, in results: [CaptureItem]) -> ClosedRange<CGFloat>? {
         guard results.indices.contains(index) else { return nil }
         let top = results[..<index].reduce(Metrics.listPadding) { $0 + Metrics.rowHeight(for: $1) }
         return top...(top + Metrics.rowHeight(for: results[index]))
     }
 
-    /// Where to scroll so the row at `index` is in view, or nil when it already is.
     func scrollAnchor(for index: Int, in results: [CaptureItem]) -> UnitPoint? {
         guard let span = rowSpan(at: index, in: results) else { return nil }
         if span.lowerBound < visibleRect.minY { return .top }
@@ -109,7 +91,6 @@ public final class ClipboardModel {
         return nil
     }
 
-    /// The middle of the selected row, measured down from the top of the panel. Places the preview card.
     var selectedRowMidY: CGFloat? {
         guard let span = rowSpan(at: selection, in: results) else { return nil }
         return Metrics.headerHeight + (span.lowerBound + span.upperBound) / 2 - visibleRect.minY
@@ -128,13 +109,11 @@ public final class ClipboardModel {
         select(min(max(selection + offset, 0), count - 1))
     }
 
-    /// Selects a row from the keyboard or the app, so the list scrolls to it.
     private func select(_ index: Int) {
         selectedByHover = false
         selection = index
     }
 
-    /// Selects a row on hover, but only when the mouse really moved.
     func hover(_ index: Int) {
         let location = NSEvent.mouseLocation
         guard location != lastHoverLocation else { return }
@@ -162,12 +141,10 @@ public final class ClipboardModel {
         select(0)
     }
 
-    /// The row thumbnail of an item, if it is already decoded.
     func cachedThumbnail(for item: CaptureItem) -> NSImage? {
         images.object(forKey: thumbnailKey(item))
     }
 
-    /// The row thumbnail of an item: a copy of at most 400 pixels, decoded off the main actor, so a row never waits for a full image.
     func thumbnail(for item: CaptureItem) async -> NSImage? {
         if let cached = cachedThumbnail(for: item) { return cached }
         let key = thumbnailKey(item)
@@ -194,11 +171,8 @@ public final class ClipboardModel {
         return image
     }
 
-    /// How many rows from the top get their thumbnail ahead of time: more than one screen of rows.
     static let warmRows = 40
 
-    /// Decodes the thumbnails of the first image rows now, and again each time the history changes,
-    /// so the panel opens with its images already there.
     func keepThumbnailsWarm() {
         let items = withObservationTracking { inbox.items } onChange: { [weak self] in
             Task { @MainActor in self?.keepThumbnailsWarm() }
@@ -208,8 +182,6 @@ public final class ClipboardModel {
         }
     }
 
-    /// The image for the preview card: decoded off the main actor, no bigger than the card shows it on a 2x screen.
-    /// It keeps the point size the full image would have, so small images are not scaled up.
     func previewImage(for item: CaptureItem) async -> NSImage? {
         let key = "\(item.id.uuidString)-\(item.contentHash)-preview" as NSString
         if let cached = images.object(forKey: key) { return cached }
@@ -225,7 +197,6 @@ public final class ClipboardModel {
         return image
     }
 
-    /// The icon of the app an item was copied from. Looked up once per app.
     func appIcon(for item: CaptureItem) -> NSImage? {
         guard let bundleID = item.sourceBundleID else { return nil }
         if let cached = appIcons[bundleID] { return cached }
@@ -239,7 +210,6 @@ public final class ClipboardModel {
         "\(item.id.uuidString)-\(item.contentHash)-thumbnail" as NSString
     }
 
-    /// Options for a thumbnail no bigger than `maxPixelSize` on its long side, turned upright.
     private nonisolated static func thumbnailOptions(maxPixelSize: Int) -> CFDictionary {
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -250,14 +220,11 @@ public final class ClipboardModel {
         return options as CFDictionary
     }
 
-    /// Decodes `url` at no more than `maxPixelSize` pixels on its long side.
     private nonisolated static func downsample(_ url: URL, maxPixelSize: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions(maxPixelSize: maxPixelSize))
     }
 
-    /// Decodes `url` for the preview card: a copy no bigger than `maxPixelSize` on its long side, and the size the
-    /// full image has in points at its dpi (72 when unknown), so the card shows it at its real size.
     private nonisolated static func decodeForCard(_ url: URL, maxPixelSize: Int) -> (image: CGImage, pointSize: CGSize)? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
               let thumb = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions(maxPixelSize: maxPixelSize))

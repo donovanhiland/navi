@@ -1,7 +1,6 @@
 import AppKit
 import Observation
 
-/// Line widths in points. The editor multiplies by the image scale.
 enum StrokeSize: Double, CaseIterable {
     case small = 2, medium = 4, large = 8
 
@@ -14,7 +13,6 @@ enum StrokeSize: Double, CaseIterable {
     }
 }
 
-/// The state of one markup editor: base image, marks, tool, selection, and undo.
 @MainActor
 @Observable
 final class AnnotateModel {
@@ -24,7 +22,6 @@ final class AnnotateModel {
         let placement: ScreenPlacement?
     }
 
-    /// Text that is being typed. `id` is set when an old text mark is being changed.
     struct TextEdit {
         var point: CGPoint
         var text: String
@@ -33,17 +30,13 @@ final class AnnotateModel {
 
     private(set) var base: CGImage
     private(set) var document: AnnotationDocument
-    /// Edit after capture: where the canvas sits on the frozen screen. Nil in the editor window.
     private(set) var placement: ScreenPlacement?
-    /// Pixels per point of the capture (2 on Retina).
     let scale: CGFloat
     var tool: AnnotationTool = .arrow {
         didSet {
             if tool != .select { selection = nil }
             if tool != .crop { cropRect = nil }
             commitText()
-            // Picking the text tool opens a box at once, so you can type without a click.
-            // A click elsewhere moves the empty box there.
             if tool == .text, oldValue != .text { startText(at: hoverPoint ?? defaultTextPoint) }
             render()
         }
@@ -57,7 +50,6 @@ final class AnnotateModel {
         didSet { if !isSyncingStyle { restyleSelection() } }
     }
 
-    /// The selected mark. It shows handles, and the color and size pickers change it.
     private(set) var selection: UUID? {
         didSet { syncStyleToSelection() }
     }
@@ -71,13 +63,9 @@ final class AnnotateModel {
     @ObservationIgnored private let renderer = AnnotationRenderer()
     @ObservationIgnored private var draft: Annotation?
     @ObservationIgnored private var dragOrigin: Annotation?
-    /// The handle being dragged on the selected mark.
     @ObservationIgnored private var resizing: Annotation.Handle?
-    /// True while the pickers copy the selected mark's style, so that copy does not change the mark.
     @ObservationIgnored private var isSyncingStyle = false
-    /// A text mark that was already selected when the pointer went down. A click without a drag edits it.
     @ObservationIgnored private var clickedSelectedText: UUID?
-    /// Where the mouse is over the image, in image pixels. Nil while it is off the image.
     @ObservationIgnored private var hoverPoint: CGPoint?
 
     var canUndo: Bool { undoStack.canUndo }
@@ -93,9 +81,6 @@ final class AnnotateModel {
         render()
     }
 
-    // MARK: Pointer input, in image pixels
-
-    /// The mouse moved over the image (nil: it left the image).
     func pointerMoved(to point: CGPoint?) {
         hoverPoint = point
     }
@@ -104,16 +89,12 @@ final class AnnotateModel {
         textEdit = TextEdit(point: point, text: "")
     }
 
-    /// Where a text box opens when the mouse is not over the image: a quarter in from the left,
-    /// halfway down, so the box has room to grow to the right.
     private var defaultTextPoint: CGPoint {
         CGPoint(x: pixelSize.width / 4, y: max(0, (pixelSize.height - fontSize) / 2))
     }
 
     func pointerDown(at point: CGPoint) {
         clickedSelectedText = nil
-        // A click outside the text box ends typing. Like other marks, the new text is then selected
-        // with the pointer tool, so it can be dragged at once. The click does nothing else.
         if let edit = textEdit, edit.id != nil || !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            document.hit(point, tolerance: 4 * scale)?.kind != .text {
             finishText()
@@ -121,7 +102,6 @@ final class AnnotateModel {
             return
         }
         commitText()
-        // A handle on the selected mark resizes it, whatever the tool.
         if let selected = selectedMark, let handle = selected.handle(at: point, tolerance: 10 * scale) {
             resizing = handle
             dragOrigin = selected
@@ -142,7 +122,6 @@ final class AnnotateModel {
         case .crop:
             cropRect = CGRect(origin: point, size: .zero)
         case .text:
-            // Press on a text mark to drag it. A click without a drag edits it (see `pointerUp`).
             if let hit = document.hit(point, tolerance: 4 * scale), hit.kind == .text {
                 selection = hit.id
                 dragOrigin = hit
@@ -201,7 +180,6 @@ final class AnnotateModel {
             if let origin = dragOrigin {
                 dragOrigin = nil
                 if moved {
-                    // Dragged a text mark: keep it selected with the pointer tool.
                     tool = .select
                     selection = origin.id
                 } else if let mark = document.annotations.first(where: { $0.id == origin.id }) {
@@ -218,14 +196,12 @@ final class AnnotateModel {
             )
             document.annotations.append(counter)
             document.nextCounter += 1
-            // The counter tool stays on, so you can click the next step.
             selection = counter.id
         default:
             if var mark = draft, moved || mark.kind == .pencil || mark.kind == .highlighter {
                 mark.end = point
                 recordUndo()
                 document.annotations.append(mark)
-                // Back to the pointer, with the new mark selected: its handles show and the pickers change it.
                 tool = .select
                 selection = mark.id
             }
@@ -233,8 +209,6 @@ final class AnnotateModel {
         }
         render()
     }
-
-    // MARK: Commands
 
     func deleteSelection() {
         guard let selection else { return }
@@ -260,7 +234,6 @@ final class AnnotateModel {
         render()
     }
 
-    /// Return in the text box: keep the text, then go back to the pointer with it selected.
     func finishText() {
         let editedID = textEdit?.id
         let count = document.annotations.count
@@ -272,8 +245,6 @@ final class AnnotateModel {
         render()
     }
 
-    /// The pointer for a spot on the image: resize arrows over a handle, a hand over a mark
-    /// you can move, a crosshair for drawing.
     func cursor(at point: CGPoint) -> NSCursor {
         if let mark = selectedMark, let handle = mark.handle(at: point, tolerance: 10 * scale) {
             return Self.resizeCursor(handle, of: mark)
@@ -331,17 +302,12 @@ final class AnnotateModel {
         render()
     }
 
-    // MARK: Frame on the screen (edit after capture)
-
-    /// Call once when a drag of the frame starts, so one undo puts the whole drag back.
     func beginReframe() {
         commitText()
         cropRect = nil
         recordUndo()
     }
 
-    /// Shows a new piece of the frozen `screen` as the base. `frame` is in screen points. Marks
-    /// stay on the same screen pixels, so they do not move on screen.
     func reframe(to frame: CGRect, screen: CGImage) {
         let pixels = CGSize(width: screen.width, height: screen.height)
         guard let (next, shift) = placement?.reframed(to: frame, screenPixels: pixels),
@@ -353,7 +319,6 @@ final class AnnotateModel {
         render()
     }
 
-    /// Places another image in the middle, at most half the size of the capture.
     func addImage(_ image: CGImage) {
         guard let png = ImageOps.png(image, pointSize: CGSize(width: image.width, height: image.height)) else { return }
         let fit = min(1, min(pixelSize.width / 2 / CGFloat(image.width), pixelSize.height / 2 / CGFloat(image.height)))
@@ -382,13 +347,10 @@ final class AnnotateModel {
         restore(snapshot)
     }
 
-    /// The final flat image, without selection outlines.
     func flatten() -> CGImage? {
         commitText()
         return renderer.render(base: base, marks: document.annotations)
     }
-
-    // MARK: Private
 
     private var fontSize: Double { (8 + strokeSize.rawValue * 3) * scale }
 
@@ -397,7 +359,6 @@ final class AnnotateModel {
         return document.annotations.first { $0.id == selection }
     }
 
-    /// Gives the selected mark the picked color and size.
     private func restyleSelection() {
         guard let selection, let index = document.annotations.firstIndex(where: { $0.id == selection }) else { return }
         var mark = document.annotations[index]
@@ -409,7 +370,6 @@ final class AnnotateModel {
         render()
     }
 
-    /// Shows the selected mark's color and size in the pickers.
     private func syncStyleToSelection() {
         guard let mark = selectedMark else { return }
         isSyncingStyle = true
@@ -433,8 +393,6 @@ final class AnnotateModel {
         render()
     }
 
-    /// The text being typed, drawn by the same renderer as finished text, so it looks the same
-    /// before and after the box closes. Nil while the box is empty.
     var textPreview: Annotation? {
         guard let edit = textEdit, !edit.text.isEmpty else { return nil }
         let original = edit.id.flatMap { id in document.annotations.first { $0.id == id } }
@@ -444,7 +402,6 @@ final class AnnotateModel {
         )
     }
 
-    /// Font size, in image pixels, of the text being typed.
     var textEditFontSize: Double {
         let original = textEdit?.id.flatMap { id in document.annotations.first { $0.id == id } }
         return original?.fontSize ?? fontSize
@@ -459,9 +416,6 @@ final class AnnotateModel {
     }
 }
 
-// MARK: - Saved markup
-
-/// Saves and loads markup as a `.navi` folder: `document.json` plus `base.png`.
 enum MarkupStore {
     static func save(base: CGImage, document: AnnotationDocument, to folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

@@ -1,7 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// A keyboard shortcut: a virtual key code and Carbon modifier bits (`cmdKey`, `shiftKey`, `optionKey`, `controlKey`).
 public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
     public var keyCode: UInt32
     public var modifiers: UInt32
@@ -11,10 +10,8 @@ public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         self.modifiers = modifiers
     }
 
-    /// ⇧⌘V, which opens the history until the user changes it.
     public static let defaultHistory = KeyCombo(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey))
 
-    /// The combo for a key press. Cocoa modifier flags become Carbon bits, so the result can register as a hot key.
     public static func from(keyCode: UInt16, cocoaFlags: NSEvent.ModifierFlags) -> KeyCombo {
         var carbon: UInt32 = 0
         if cocoaFlags.contains(.command) { carbon |= UInt32(cmdKey) }
@@ -24,7 +21,6 @@ public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         return KeyCombo(keyCode: UInt32(keyCode), modifiers: carbon)
     }
 
-    /// The modifiers in Cocoa form, for a menu item's key equivalent.
     public var cocoaModifiers: NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if modifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
@@ -34,12 +30,10 @@ public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         return flags
     }
 
-    /// The key's name, such as "V" or "Return". Keys not in the table show their code.
     public var keyName: String {
         Self.keyNames[keyCode] ?? "Key \(keyCode)"
     }
 
-    /// The shortcut as menus show it: modifiers in macOS order (⌃⌥⇧⌘), then the key name.
     public var display: String {
         var text = ""
         if modifiers & UInt32(controlKey) != 0 { text += "⌃" }
@@ -49,8 +43,6 @@ public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
         return text + keyName
     }
 
-    /// Why this combo cannot be used, or nil when it can. `reserved` maps a name to each combo Navi already uses.
-    /// The caller leaves out the shortcut being changed.
     public func validate(reserved: [String: KeyCombo]) -> KeyComboError? {
         if modifiers & UInt32(cmdKey | controlKey | optionKey) == 0 {
             return modifiers & UInt32(shiftKey) != 0 ? .shiftOnly : .needsModifier
@@ -85,17 +77,12 @@ public struct KeyCombo: Codable, Equatable, Hashable, Sendable {
     ]
 }
 
-/// Why a shortcut cannot be used. Macintosh rules: at least one of ⌘, ⌃ or ⌥, and no clash with Navi's own.
 public enum KeyComboError: Error, Equatable {
-    /// No modifier at all.
     case needsModifier
-    /// Only ⇧ (with the key).
     case shiftOnly
-    /// Navi already uses this combo for the named action.
     case inUse(String)
 }
 
-/// Saves the History shortcut in `UserDefaults`, as JSON.
 public struct HistoryShortcutStore {
     static let key = "history.shortcut"
 
@@ -105,7 +92,6 @@ public struct HistoryShortcutStore {
         self.defaults = defaults
     }
 
-    /// The saved shortcut, or `KeyCombo.defaultHistory` when none is saved or the saved value does not decode.
     public func load() -> KeyCombo {
         guard let data = defaults.data(forKey: Self.key),
               let combo = try? JSONDecoder().decode(KeyCombo.self, from: data) else {
@@ -119,7 +105,6 @@ public struct HistoryShortcutStore {
         defaults.set(data, forKey: Self.key)
     }
 
-    /// Forgets the saved shortcut, so `load()` returns the default again.
     public func reset() {
         defaults.removeObject(forKey: Self.key)
     }

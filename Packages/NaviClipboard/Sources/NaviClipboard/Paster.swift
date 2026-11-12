@@ -2,10 +2,8 @@ import AppKit
 import Carbon.HIToolbox
 import NaviCore
 
-/// Puts an item on the pasteboard and presses Command-V in the front app.
 @MainActor
 enum Paster {
-    /// Writes the item to the pasteboard. Returns the new pasteboard change count.
     static func write(_ item: CaptureItem, inbox: Inbox, to pasteboard: NSPasteboard) -> Int {
         pasteboard.clearContents()
         if item.kind == .recording, let url = inbox.fileURL(for: item) {
@@ -18,10 +16,8 @@ enum Paster {
         return pasteboard.changeCount
     }
 
-    /// Sending a key press to another app needs the Accessibility permission.
     static var hasAccessibility: Bool { AXIsProcessTrusted() }
 
-    /// Shows the macOS prompt that opens System Settings > Privacy & Security > Accessibility.
     static func requestAccessibility() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)

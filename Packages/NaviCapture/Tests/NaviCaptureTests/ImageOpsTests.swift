@@ -4,7 +4,6 @@ import Testing
 @testable import NaviCapture
 
 @Suite struct ImageOpsTests {
-    /// A 2 x 1 image: red on the left, blue on the right.
     private func redBlue() -> CGImage {
         var bytes: [UInt8] = [255, 0, 0, 255, 0, 0, 255, 255]
         let context = CGContext(
@@ -14,7 +13,6 @@ import Testing
         return context.makeImage()!
     }
 
-    /// RGBA of each pixel, rows from the top.
     private func pixels(_ image: CGImage) -> [[UInt8]] {
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
         let context = CGContext(
@@ -29,15 +27,15 @@ import Testing
         let rotated = try #require(ImageOps.apply(.rotateClockwise, to: redBlue()))
         #expect(rotated.width == 1 && rotated.height == 2)
         let result = pixels(rotated)
-        #expect(result[0][0] > 200 && result[0][2] < 50) // top is red
-        #expect(result[1][2] > 200 && result[1][0] < 50) // bottom is blue
+        #expect(result[0][0] > 200 && result[0][2] < 50)
+        #expect(result[1][2] > 200 && result[1][0] < 50)
     }
 
     @Test func flipHorizontalSwapsSides() throws {
         let flipped = try #require(ImageOps.apply(.flipHorizontal, to: redBlue()))
         let result = pixels(flipped)
-        #expect(result[0][2] > 200) // left is blue
-        #expect(result[1][0] > 200) // right is red
+        #expect(result[0][2] > 200)
+        #expect(result[1][0] > 200)
     }
 
     @MainActor

@@ -15,10 +15,6 @@ import FluidAudio
 import Foundation
 import os
 
-/// Parakeet TDT v3 speech-to-text on the Neural Engine, through FluidAudio. Hex's default engine.
-///
-/// The model (about 0.5 GB) downloads once from Hugging Face, then everything runs on this Mac.
-/// Until it is ready, the app uses Apple's speech engine.
 actor ParakeetModel {
     static let shared = ParakeetModel()
     static let version: AsrModelVersion = .v3
@@ -27,14 +23,12 @@ actor ParakeetModel {
     private var manager: AsrManager?
     private var loading: Task<AsrManager, any Error>?
 
-    /// True when the model files are on disk. Loading them still takes a moment.
     nonisolated static var isDownloaded: Bool {
         AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: version), version: version)
     }
 
     var isLoaded: Bool { manager != nil }
 
-    /// Downloads (first time only) and loads the model. Safe to call many times.
     @discardableResult
     func prepare() async throws -> AsrManager {
         if let manager { return manager }
@@ -59,12 +53,10 @@ actor ParakeetModel {
         }
     }
 
-    /// Transcribes 16 kHz mono samples.
     func transcribe(_ samples: [Float]) async throws -> String {
         try await transcribeWithTimes(samples).text
     }
 
-    /// Transcribes 16 kHz mono samples, with the time of each token in seconds.
     func transcribeWithTimes(_ samples: [Float]) async throws -> (text: String, tokens: [Sentences.Token]) {
         let manager = try await prepare()
         let layers = await manager.decoderLayerCount
@@ -77,25 +69,21 @@ actor ParakeetModel {
     }
 }
 
-/// A `SpeechEngine` that collects the whole utterance, then runs Parakeet once, like Hex.
 struct ParakeetEngine: SpeechEngine {
     func transcribe(audio: AsyncStream<AudioChunk>) async throws -> String {
         var buffers: [AVAudioPCMBuffer] = []
         for await chunk in audio { buffers.append(chunk.buffer) }
         try Task.checkCancellation()
         let samples = try Self.samples(of: buffers)
-        // Less than a tenth of a second is a tap, not speech.
         guard samples.count > 1600 else { return "" }
         return try await ParakeetModel.shared.transcribe(samples)
     }
 
-    /// The buffers as one 16 kHz mono clip.
     static func samples(of buffers: [AVAudioPCMBuffer]) throws -> [Float] {
         guard let joined = join(buffers) else { return [] }
         return try AudioConverter().resampleBuffer(joined)
     }
 
-    /// Joins buffers of one format into one buffer, so resampling has no seams.
     static func join(_ buffers: [AVAudioPCMBuffer]) -> AVAudioPCMBuffer? {
         guard let first = buffers.first else { return nil }
         let format = first.format
@@ -109,7 +97,6 @@ struct ParakeetEngine: SpeechEngine {
             let target = UnsafeMutableAudioBufferListPointer(joined.mutableAudioBufferList)
             for index in 0 ..< min(source.count, target.count) {
                 guard let from = source[index].mData, let to = target[index].mData else { continue }
-                // `mBytesPerFrame` is per buffer: one channel when non-interleaved, all channels when interleaved.
                 memcpy(to.advanced(by: offset * bytesPerFrame), from, frames * bytesPerFrame)
             }
             offset += frames

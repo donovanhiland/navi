@@ -3,22 +3,17 @@ import Carbon.HIToolbox
 import NaviCore
 import SwiftUI
 
-/// One capture shown as a corner card.
 @MainActor
 @Observable
 final class Card: Identifiable {
     let id = UUID()
     let inboxID: UUID?
     private(set) var image: NSImage
-    /// A small copy of `image` for the card itself, so the slide-in and the hover blur stay smooth.
     private(set) var thumbnail: NSImage
     private(set) var png: Data
     let createdAt: Date
-    /// The file with a readable name, used for drags, copy, and save.
     private(set) var dragURL: URL
-    /// Where Save put the file, once it is saved.
     var savedURL: URL?
-    /// Set for recordings. `image` is then the first frame.
     private(set) var video: VideoInfo?
 
     struct VideoInfo {
@@ -45,7 +40,6 @@ final class Card: Identifiable {
         try writeDragFile()
     }
 
-    /// Swaps in a new image, for example after markup. A saved file is saved again on the next Save.
     func update(image: NSImage, png: Data) {
         self.image = image
         thumbnail = Self.thumbnail(of: image)
@@ -54,7 +48,6 @@ final class Card: Identifiable {
         try? writeDragFile()
     }
 
-    /// Swaps in new video details, for example after trim or a switch to GIF.
     func update(video: VideoInfo) {
         self.video = video
         savedURL = nil
@@ -76,7 +69,6 @@ final class Card: Identifiable {
         }
     }
 
-    /// Scales the image down to fit three times the card size (sharp on a Retina screen).
     private static func thumbnail(of image: NSImage) -> NSImage {
         let limit = CGSize(width: CardStack.cardSize.width * 3, height: CardStack.cardSize.height * 3)
         guard let source = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return image }
@@ -96,14 +88,12 @@ final class Card: Identifiable {
 
     var cgImage: CGImage? { image.cgImage(forProposedRect: nil, context: nil, hints: nil) }
 
-    /// Pixels per point of the image.
     var scale: CGFloat {
         guard let cgImage, image.size.width > 0 else { return 1 }
         return CGFloat(cgImage.width) / image.size.width
     }
 }
 
-/// What the card buttons do. `CaptureFeature` supplies these.
 struct CardActions {
     let copy: (Card) -> Void
     let save: (Card) -> Void
@@ -118,25 +108,19 @@ struct CardActions {
     let setGIF: (Card, Bool) -> Void
 }
 
-/// Shows corner cards stacked in the bottom-left corner of a display. Each card is its own
-/// non-activating panel, so clicking a card does not take focus from the front app.
 @MainActor
 final class CardStack {
     static let cardSize = CGSize(width: 220, height: 140)
     private static let margin: CGFloat = 16
     private static let gap: CGFloat = 10
 
-    /// Each card remembers its display, so cards stay where they were captured.
     private var entries: [(card: Card, panel: NSPanel, screen: NSScreen?)] = []
 
-    /// The open card for a history item, if there is one.
     func card(forInboxID id: UUID) -> Card? {
         entries.first { $0.card.inboxID == id }?.card
     }
     private var timers: [UUID: Timer] = [:]
     private var hovered: Set<UUID> = []
-    /// ⌘C, ⌘S, and ⌘W for the card under the mouse. They exist only while the mouse is on a card,
-    /// so the same keys work as normal in other apps.
     private var cardKeys: [HotKey] = []
     private var cardKeysOwner: UUID?
     var actions: CardActions?
@@ -176,7 +160,6 @@ final class CardStack {
         for entry in entries.reversed() { close(entry.card) }
     }
 
-    /// Slides the card in from the left edge, a little past its place, then back: a small bounce.
     private func slideIn(_ panel: NSPanel) {
         let target = panel.frame
         let overshoot: CGFloat = 10
@@ -202,7 +185,6 @@ final class CardStack {
         }
     }
 
-    /// Oldest card at the bottom, newer cards above it.
     private func layout(animated: Bool) {
         var countOnScreen: [ObjectIdentifier: Int] = [:]
         for entry in entries {
@@ -294,12 +276,10 @@ final class CardPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// Lets the first click on a card work even though Navi is not the active app.
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
-/// The card: the capture, and on hover a blur with Copy and Save in the middle and round corner buttons.
 struct CornerCardView: View {
     let card: Card
     let actions: CardActions?
@@ -336,7 +316,6 @@ struct CornerCardView: View {
             onHover(hovering)
         }
         .onDrag {
-            // Send the file itself, so Finder and other apps keep its name.
             let provider = NSItemProvider(object: card.dragURL as NSURL)
             provider.suggestedName = card.dragURL.deletingPathExtension().lastPathComponent
             return provider

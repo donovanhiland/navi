@@ -1,7 +1,6 @@
 import AppKit
 import NaviCore
 
-/// Clipboard history: saves every copy to the Inbox and shows a keyboard-only picker that pastes.
 @MainActor
 public final class ClipboardFeature {
     private let inbox: Inbox
@@ -15,7 +14,6 @@ public final class ClipboardFeature {
         return panel
     }()
 
-    /// ⌘E on an image in the list: open it in the markup editor. The app wires this to capture.
     public var onAnnotate: ((CaptureItem) -> Void)?
 
     public init(inbox: Inbox) {
@@ -42,7 +40,6 @@ public final class ClipboardFeature {
 
     public static func requestAccessibility() { Paster.requestAccessibility() }
 
-    /// Copies the item and pastes it into the front app. Without Accessibility, it only copies.
     private func paste(_ item: CaptureItem) {
         let changeCount = Paster.write(item, inbox: inbox, to: .general)
         watcher.markOwnChange(changeCount)
@@ -52,7 +49,6 @@ public final class ClipboardFeature {
             return
         }
         Task { @MainActor in
-            // Give the panel time to close so the key press goes to the app underneath.
             try? await Task.sleep(for: .milliseconds(50))
             Paster.pressCommandV()
         }

@@ -1,21 +1,17 @@
 import AppKit
 import ScreenCaptureKit
 
-/// A captured image and its points-to-pixels scale.
 struct CapturedImage {
     let image: CGImage
     let scale: CGFloat
 }
 
-/// One window on screen, for window picking. `frame` is in Cocoa global coordinates.
 struct OnScreenWindow {
     let id: CGWindowID
     let frame: CGRect
-    /// The owning app's name and process, for the label on the highlighted window.
     var appName: String = ""
     var ownerPID: pid_t = 0
 
-    /// The same window with its frame moved by `offset`.
     func offsetBy(dx: CGFloat, dy: CGFloat) -> OnScreenWindow {
         OnScreenWindow(id: id, frame: frame.offsetBy(dx: dx, dy: dy), appName: appName, ownerPID: ownerPID)
     }
@@ -26,12 +22,10 @@ enum CaptureError: Error {
     case noWindow
 }
 
-/// Takes pictures of displays and windows with ScreenCaptureKit.
 @MainActor
 enum ScreenGrabber {
     static let finderBundleID = "com.apple.finder"
 
-    /// Captures every display, without Navi's overlays and cards. Used to freeze the screen before a selection.
     static func captureAllScreens(hideDesktopIcons: Bool) async throws -> [(NSScreen, CapturedImage)] {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         var result: [(NSScreen, CapturedImage)] = []
@@ -41,19 +35,16 @@ enum ScreenGrabber {
         return result
     }
 
-    /// Captures one display, without Navi's overlays and cards.
     static func capture(_ screen: NSScreen, hideDesktopIcons: Bool) async throws -> CapturedImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         return try await capture(screen, content: content, hideDesktopIcons: hideDesktopIcons)
     }
 
-    /// Captures part of a display. `rect` is in display-local points with the origin at the top left.
     static func capture(_ screen: NSScreen, rect: CGRect, hideDesktopIcons: Bool) async throws -> CapturedImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         return try await capture(screen, content: content, hideDesktopIcons: hideDesktopIcons, sourceRect: rect)
     }
 
-    /// Captures one window alone, with its shadow and a clear background. Nothing behind it gets in.
     static func captureWindow(id: CGWindowID) async throws -> CapturedImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let window = content.windows.first(where: { $0.windowID == id }) else { throw CaptureError.noWindow }
@@ -71,8 +62,6 @@ enum ScreenGrabber {
         return CapturedImage(image: image, scale: scale)
     }
 
-    /// Normal app windows on screen, front to back. Navi's own normal windows (such as the markup
-    /// editor) count too; its overlays, cards, and pills are above layer 0, so they never do.
     static func onScreenWindows() -> [OnScreenWindow] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
@@ -104,10 +93,7 @@ enum ScreenGrabber {
         let ownBundleID = Bundle.main.bundleIdentifier
         let excluded = content.windows.filter { window in
             let bundleID = window.owningApplication?.bundleIdentifier
-            // Leave out Navi's overlays, cards, pins, and pills (all above layer 0), but keep its
-            // normal windows, such as the markup editor, so you can take a shot of them.
             if bundleID == ownBundleID { return window.windowLayer != 0 }
-            // Finder draws desktop icons in windows below the normal window layer.
             return hideDesktopIcons && bundleID == finderBundleID && window.windowLayer < 0
         }
         let filter = SCContentFilter(display: display, excludingWindows: excluded)
@@ -133,7 +119,6 @@ extension NSScreen {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
     }
 
-    /// The display under the mouse.
     static var underMouse: NSScreen? {
         let mouse = NSEvent.mouseLocation
         return screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? main

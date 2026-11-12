@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 status=0
 for test in *.test.sh; do
-  if [[ $test == sparkle-check.test.sh && $(uname) != Darwin ]]; then
+  if [[ ($test == sparkle-check.test.sh || $test == comments.test.sh) && $(uname) != Darwin ]]; then
     echo "skip $test (macOS only)"
     continue
   fi

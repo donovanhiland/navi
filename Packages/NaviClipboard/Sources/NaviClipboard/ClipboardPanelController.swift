@@ -2,15 +2,11 @@ import AppKit
 import NaviCore
 import SwiftUI
 
-/// A borderless panel that takes key focus without making Navi the active app.
-/// The app you were typing in stays active, so Command-V lands there after the panel closes.
 private final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
-/// Shows and hides the history panel at the mouse, sizes it to fit, shows the preview card,
-/// and handles keyboard keys.
 @MainActor
 final class ClipboardPanelController {
     private let model: ClipboardModel
@@ -22,11 +18,9 @@ final class ClipboardPanelController {
     private var observingHeight = false
     private var keyMonitor: Any?
     private var resignObserver: NSObjectProtocol?
-    /// The panel's top-left corner. The panel grows and shrinks downward from here.
     private var topLeft: CGPoint = .zero
     private var screenFrame: CGRect = .zero
 
-    /// ⌘E on an image: mark it up. The panel closes first.
     var onAnnotate: ((CaptureItem) -> Void)?
 
     init(model: ClipboardModel, onChoose: @escaping (CaptureItem) -> Void) {
@@ -36,12 +30,10 @@ final class ClipboardPanelController {
 
     var isVisible: Bool { panel?.isVisible ?? false }
 
-    /// Builds the panel and its list view ahead of time, so the first open costs the same as the rest.
     func prepare() {
         let panel = panel ?? makePanel()
         self.panel = panel
 
-        // The list view is built once and kept: building it is most of the cost of an open.
         if !(panel.contentView is NSVisualEffectView) {
             let host = NSHostingView(rootView: ClipboardListView(
                 model: model,
@@ -53,7 +45,6 @@ final class ClipboardPanelController {
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
             panel.contentView = container
-            // Sizing the content lays the rows out now, so the first open does not do it.
             panel.setContentSize(CGSize(width: Metrics.width, height: model.contentHeight))
             container.layoutSubtreeIfNeeded()
         }
@@ -96,8 +87,6 @@ final class ClipboardPanelController {
         onChoose(item)
     }
 
-    // MARK: Size and place
-
     private func applyHeight() {
         guard let panel else { return }
         let size = CGSize(width: Metrics.width, height: model.contentHeight)
@@ -108,9 +97,7 @@ final class ClipboardPanelController {
         panel.invalidateShadow()
     }
 
-    /// Resizes the panel each time the content height changes (typing filters the list).
     private func observeHeight() {
-        // One observer at a time: the panel is shown many times and each show asks for one.
         guard !observingHeight else { return }
         observingHeight = true
         withObservationTracking {
@@ -126,8 +113,6 @@ final class ClipboardPanelController {
         }
     }
 
-    // MARK: Preview card
-
     private func schedulePreview() {
         previewTask?.cancel()
         previewPanel?.orderOut(nil)
@@ -135,10 +120,8 @@ final class ClipboardPanelController {
         let model = self.model
         previewTask = Task { @MainActor [weak self] in
             let shownAt = ContinuousClock.now + .milliseconds(600)
-            // A short wait first, so holding an arrow key does not decode every image it passes.
             try? await Task.sleep(for: .milliseconds(150))
             guard !Task.isCancelled else { return }
-            // Decode during the rest of the delay: the card is ready when the delay ends.
             var image: NSImage?
             if item.fileName != nil { image = await model.previewImage(for: item) }
             try? await Task.sleep(until: shownAt, clock: .continuous)
@@ -158,7 +141,6 @@ final class ClipboardPanelController {
             host = existing
             host.rootView = view
         } else {
-            // The card is built once: its view is replaced on each show.
             host = NSHostingView(rootView: view)
             let container = Self.menuBackground(cornerRadius: 12, material: .popover)
             container.addSubview(host)
@@ -173,13 +155,10 @@ final class ClipboardPanelController {
         var y = rowMidY - size.height / 2
         y = min(max(y, screenFrame.minY), screenFrame.maxY - size.height)
         preview.setFrame(CGRect(x: x, y: y, width: size.width, height: size.height), display: true)
-        // The card fills the panel. It is sized here, after the panel, so a smaller card is not left at the old size.
         host.frame = preview.contentView?.bounds ?? CGRect(origin: .zero, size: size)
         preview.orderFront(nil)
         preview.invalidateShadow()
     }
-
-    // MARK: Windows
 
     private func makePanel() -> KeyPanel {
         let panel = KeyPanel(
@@ -219,7 +198,6 @@ final class ClipboardPanelController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
     }
 
-    /// The blurred menu background with rounded corners.
     private static func menuBackground(cornerRadius: CGFloat, material: NSVisualEffectView.Material = .menu) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = material
@@ -237,8 +215,6 @@ final class ClipboardPanelController {
         return view
     }
 
-    // MARK: Keys
-
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -247,38 +223,37 @@ final class ClipboardPanelController {
         }
     }
 
-    /// Returns true when the key was used here and must not reach the text field.
     private func handle(_ event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
         switch Int(event.keyCode) {
-        case 53: // Esc
+        case 53:
             hide()
             return true
-        case 36, 76: // Return, Enter
+        case 36, 76:
             if let item = model.selectedItem { choose(item) }
             return true
-        case 125: // Down
+        case 125:
             model.move(by: 1)
             return true
-        case 126: // Up
+        case 126:
             model.move(by: -1)
             return true
-        case 35 where flags == .option: // Option-P
+        case 35 where flags == .option:
             model.togglePinSelected()
             return true
-        case 51 where flags == .option: // Option-Delete
+        case 51 where flags == .option:
             model.deleteSelected()
             return true
-        case 51 where flags == [.option, .command]: // Option-Command-Delete
+        case 51 where flags == [.option, .command]:
             model.clear()
             return true
-        case 14 where flags == .command: // Command-E
+        case 14 where flags == .command:
             if let item = model.selectedItem, item.kind.isImage, let onAnnotate {
                 hide()
                 onAnnotate(item)
             }
             return true
-        case 12 where flags == .command: // Command-Q
+        case 12 where flags == .command:
             NSApp.terminate(nil)
             return true
         default:

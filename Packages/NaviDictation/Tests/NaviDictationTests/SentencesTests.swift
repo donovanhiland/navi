@@ -24,7 +24,6 @@ struct SentencesTests {
     }
 
     @Test func endSpansCoverTheEndMarkAndTheNextWordStart() throws {
-        // Parakeet times the end mark over the pause, and the next word starts where it ends.
         let tokens = [
             token(" Ship", 0.0, 0.3), token(" it", 0.3, 0.5), token(".", 0.5, 0.9),
             token(" Then", 0.9, 1.1), token(" rest", 1.1, 1.4),
@@ -36,7 +35,6 @@ struct SentencesTests {
     }
 
     @Test func tokensThatDoNotMatchTheTextGiveNothing() {
-        // The text has two sentence ends, the tokens only one.
         let tokens = [token(" A", 0, 0.2), token(".", 0.2, 0.3), token(" B", 1, 1.3)]
         #expect(Sentences.endSpans(text: "A. B. C", tokens: tokens) == nil)
     }
@@ -53,7 +51,6 @@ struct SentencesTests {
 }
 
 struct LiveCutTests {
-    /// 16 kHz audio: loud where `loud` says, silent elsewhere.
     private func audio(seconds: Double, loud: [ClosedRange<Double>]) -> [Float] {
         (0 ..< Int(seconds * 16000)).map { index in
             let time = Double(index) / 16000
@@ -66,7 +63,6 @@ struct LiveCutTests {
     }
 
     @Test func cutsInTheSilenceAfterAFinishedSentence() throws {
-        // "Ship it." from 0 to 0.5 s, silence, "Then rest" from 0.9 s.
         let samples = audio(seconds: 1.5, loud: [0 ... 0.5, 0.9 ... 1.5])
         let tokens = [
             token(" Ship", 0, 0.3), token(" it", 0.3, 0.5), token(".", 0.5, 0.9),
@@ -74,12 +70,10 @@ struct LiveCutTests {
         ]
         let done = try #require(LiveDictation.finishedSentences(in: samples, after: 0, text: "Ship it. Then rest", tokens: tokens))
         #expect(done.sentences == ["Ship it."])
-        // The middle of the quietest 100 ms, inside the silence.
         #expect((Int(0.5 * 16000) ... Int(0.9 * 16000)).contains(done.cut))
     }
 
     @Test func noCutWithoutARealPause() {
-        // The speaker runs straight on: no quiet stretch near the end mark.
         let samples = audio(seconds: 1.5, loud: [0 ... 1.5])
         let tokens = [
             token(" Ship", 0, 0.3), token(" it", 0.3, 0.5), token(".", 0.5, 0.6),
@@ -89,7 +83,6 @@ struct LiveCutTests {
     }
 
     @Test func timesCountFromTheLastCut() throws {
-        // An earlier cut at 1 s: the pass covers the audio after it, so its times start there.
         let samples = audio(seconds: 2.5, loud: [0 ... 0.9, 1.0 ... 1.5, 1.9 ... 2.5])
         let tokens = [
             token(" Ship", 0, 0.3), token(" it", 0.3, 0.5), token(".", 0.5, 0.9),
@@ -110,7 +103,6 @@ struct TailTests {
     @Test func waitsForQuietWhileSpeechGoesOn() {
         #expect(!Microphone.tailIsDone(sinceRelease: .milliseconds(100), sinceSound: .milliseconds(50)))
         #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(300), sinceSound: .milliseconds(200)))
-        // Never longer than the cap.
         #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(600), sinceSound: .zero))
     }
 }

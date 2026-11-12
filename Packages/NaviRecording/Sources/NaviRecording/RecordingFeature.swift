@@ -1,33 +1,16 @@
 import AppKit
 import os
 
-/// Screen recording: record bar, recorder, camera bubble, click and key overlays, GIF, and trim.
-///
-/// Flow: the app picks a region and calls `showRecordBar`. The user sets the options and picks
-/// Record GIF or Record Video. A red item appears in the menu bar. Clicking it, or calling `stop()`,
-/// ends the recording and calls `onFinish` with the file.
-///
-/// Files go to a temp folder (`NaviRecordings` in the temporary directory) as `Navi 2026-11-06 at 16.10.12.mp4`.
-/// The app copies the result where it needs it, for example into the Inbox.
-///
-/// Permissions: Screen Recording for everything. Microphone and Camera when those options are on.
-/// Input Monitoring for the keystroke overlay. `Info.plist` needs `NSCameraUsageDescription` and
-/// `NSMicrophoneUsageDescription`, and the app needs the camera and audio input entitlements.
 @MainActor
 public final class RecordingFeature {
     private enum State {
         case idle
-        /// The record bar is on screen.
         case choosing
-        /// The user picked Record. The stream is starting.
         case starting
         case recording
-        /// The stream stopped. The file is closing.
         case stopping
     }
 
-    /// Called with a message when something goes wrong: a missing permission, a stream error,
-    /// a failed GIF. Cancel does not call it.
     public var onError: ((any Error) -> Void)?
 
     private var state = State.idle
@@ -46,20 +29,10 @@ public final class RecordingFeature {
         recorder.onUnexpectedStop = { [weak self] _ in self?.stop() }
     }
 
-    /// True from the moment the user picks Record until the file is closed.
     public var isRecording: Bool { state == .starting || state == .recording }
 
-    // MARK: Permission
-
-    /// Screen Recording permission.
     public static var hasScreenAccess: Bool { CGPreflightScreenCaptureAccess() }
 
-    // MARK: Record bar
-
-    /// Shows the record bar for a region the app picked. Replaces a bar that is already open.
-    /// While a recording runs or finishes, it reports `RecordingError.busy` and does nothing.
-    ///
-    /// - Parameter onFinish: called once with the finished file. It is not called on cancel (Esc).
     public func showRecordBar(region: RecordingRegion, onFinish: @escaping (RecordingResult) -> Void) {
         guard state == .idle || state == .choosing else {
             onError?(RecordingError.busy)
@@ -86,8 +59,6 @@ public final class RecordingFeature {
         bar.show()
     }
 
-    /// Stops the recording and calls `onFinish` when the file is ready.
-    /// Called from the red menu bar item too. Does nothing when nothing is recording.
     public func stop() {
         switch state {
         case .starting:
@@ -99,20 +70,13 @@ public final class RecordingFeature {
         }
     }
 
-    // MARK: GIF and trim
-
-    /// Converts an MP4 to a looping GIF next to it. About 15 fps, at most 800 points wide, no sound.
     public nonisolated static func makeGIF(from url: URL) async throws -> URL {
         try await GIFExporter.makeGIF(from: url)
     }
 
-    /// Opens a trim window for a video. Returns the trimmed file, the same URL when nothing was cut,
-    /// or nil when the user cancels or the file cannot be trimmed.
     public func trim(_ url: URL) async -> URL? {
         await TrimWindow.trim(url)
     }
-
-    // MARK: Private: bar
 
     private func cancelBar() {
         guard state == .choosing else { return }
@@ -140,14 +104,11 @@ public final class RecordingFeature {
                 bar.model.options.camera = false
                 return
             }
-            // The user may have switched it off or cancelled while the camera started.
             let stillWanted = state == .starting || state == .recording
                 || (state == .choosing && self.bar?.model.options.camera == true)
             if !stillWanted { bubble.hide() }
         }
     }
-
-    // MARK: Private: start
 
     private func begin(_ format: RecordingFormat) {
         guard state == .choosing, let bar else { return }
@@ -159,7 +120,6 @@ public final class RecordingFeature {
         state = .starting
         wantsGIF = format == .gif
         stopRequestedWhileStarting = false
-        // A GIF has no sound.
         if wantsGIF {
             options.microphone = false
             options.computerAudio = false
@@ -195,8 +155,6 @@ public final class RecordingFeature {
             }
         }
     }
-
-    // MARK: Private: finish
 
     private func finish() {
         guard state == .recording else { return }

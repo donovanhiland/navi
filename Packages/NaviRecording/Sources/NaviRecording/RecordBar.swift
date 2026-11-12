@@ -7,9 +7,6 @@ enum RecordingFormat {
     case video
 }
 
-// MARK: - Model
-
-/// State of the record bar: the region, the options, and the typed size.
 @MainActor
 @Observable
 final class RecordBarModel {
@@ -28,13 +25,11 @@ final class RecordBarModel {
     @ObservationIgnored var onStart: ((RecordingFormat) -> Void)?
     @ObservationIgnored var onCancel: (() -> Void)?
 
-    /// True when the size fields can change the region. A window has a fixed size.
     var canResize: Bool {
         if case .window = region { return false }
         return true
     }
 
-    /// nil when the region is not on any screen now.
     init?(region: RecordingRegion, options: RecordingOptions) {
         guard let resolved = ResolvedRegion.resolve(region) else { return nil }
         self.region = region
@@ -46,7 +41,6 @@ final class RecordBarModel {
         syncSizeText()
     }
 
-    /// The region in Cocoa global coordinates.
     var cocoaFrame: CGRect? { ResolvedRegion.resolve(region)?.frame }
 
     func toggleMicrophone() {
@@ -59,14 +53,12 @@ final class RecordBarModel {
         }
     }
 
-    /// The fullscreen button: record the whole display.
     func useFullscreen() {
         region = .display(displayID)
         syncSizeText()
         onRegionChange?()
     }
 
-    /// Applies the typed width and height (pixels). Bad text puts the old size back.
     func applyTypedSize() {
         guard canResize, let width = Int(widthText), let height = Int(heightText), width > 0, height > 0 else {
             syncSizeText()
@@ -84,7 +76,6 @@ final class RecordBarModel {
         onStart?(format)
     }
 
-    /// The region as a display-local rect (top left origin, points).
     private var localArea: CGRect {
         switch region {
         case .area(_, let rect): rect
@@ -102,8 +93,6 @@ final class RecordBarModel {
         heightText = String(Int((size.height * scale).rounded()))
     }
 }
-
-// MARK: - View
 
 struct RecordBarView: View {
     @Bindable var model: RecordBarModel
@@ -229,16 +218,12 @@ struct RecordBarView: View {
     }
 }
 
-// MARK: - Panels
-
-/// A panel that can take keys (for the size fields) without making Navi the active app.
 private final class BarPanel: NSPanel {
     var onCancel: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override func cancelOperation(_ sender: Any?) { onCancel?() }
 }
 
-/// A dashed red outline around the region. It ignores the mouse.
 private final class OutlineView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(rect: bounds.insetBy(dx: 1.5, dy: 1.5))
@@ -249,7 +234,6 @@ private final class OutlineView: NSView {
     }
 }
 
-/// Shows the record bar below the region and a dashed outline around it.
 @MainActor
 final class RecordBarController {
     let model: RecordBarModel
@@ -293,7 +277,6 @@ final class RecordBarController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
     }
 
-    /// Navi windows that must stay out of the video.
     var windowIDs: Set<CGWindowID> {
         Set([barPanel, outlinePanel].compactMap { $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil })
     }
@@ -302,7 +285,6 @@ final class RecordBarController {
         layout()
         outlinePanel.orderFrontRegardless()
         barPanel.makeKeyAndOrderFront(nil)
-        // The text field is a key view, so Escape would go to it. Catch it first.
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak model] event in
             if event.keyCode == 53 {
                 MainActor.assumeIsolated { model?.onCancel?() }
@@ -321,7 +303,6 @@ final class RecordBarController {
 
     private func layout() {
         guard let region = model.cocoaFrame else { return }
-        // The outline sits just outside the region so it never covers the pixels that get recorded.
         outlinePanel.setFrame(region.insetBy(dx: -3, dy: -3), display: true)
         let screen = NSScreen.screens.first { $0.frame.intersects(region) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? region

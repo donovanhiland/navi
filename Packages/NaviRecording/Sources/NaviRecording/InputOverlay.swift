@@ -2,10 +2,6 @@ import AppKit
 import CoreGraphics
 import os
 
-/// Click ripples and a keystroke pill, driven by a listen-only event tap.
-///
-/// The overlays are normal Navi windows, so they show up in the recording.
-/// The tap sees events and never changes them.
 @MainActor
 final class InputOverlay {
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Recording")
@@ -14,7 +10,6 @@ final class InputOverlay {
     private var context: Unmanaged<TapContext>?
     private var showsClicks = false
     private var showsKeys = false
-    /// Where the key pill sits: bottom center of this rect (Cocoa global).
     private let keyPillArea: CGRect
     private var keyPill: KeyPill?
 
@@ -22,11 +17,8 @@ final class InputOverlay {
         self.keyPillArea = keyPillArea
     }
 
-    /// Input Monitoring permission, needed to see keystrokes.
     static var hasKeyAccess: Bool { CGPreflightListenEventAccess() }
 
-    /// Starts the tap. Keystrokes need Input Monitoring. Without it, this asks for it
-    /// and shows clicks only. The permission applies after the user grants it and starts a new recording.
     func start(clicks: Bool, keystrokes: Bool) {
         guard tap == nil, clicks || keystrokes else { return }
         var wantsKeys = keystrokes
@@ -58,7 +50,6 @@ final class InputOverlay {
         self.tap = tap
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         self.source = source
-        // The main run loop runs the callback, so it runs on the main thread.
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
     }
@@ -75,8 +66,6 @@ final class InputOverlay {
         keyPill = nil
     }
 
-    // MARK: Events
-
     fileprivate func click(atQuartz point: CGPoint) {
         guard showsClicks, let primary = NSScreen.screens.first else { return }
         let cocoa = CGPoint(x: point.x, y: primary.frame.height - point.y)
@@ -90,9 +79,7 @@ final class InputOverlay {
     }
 }
 
-/// What the C callback can reach. It lives from `start()` to `stop()`.
 private final class TapContext: @unchecked Sendable {
-    /// Only read and written on the main thread.
     nonisolated(unsafe) var owner: InputOverlay?
     nonisolated(unsafe) var tap: CFMachPort?
 
@@ -102,13 +89,11 @@ private final class TapContext: @unchecked Sendable {
 private let tapCallback: CGEventTapCallBack = { _, type, event, userInfo in
     guard let userInfo else { return Unmanaged.passUnretained(event) }
     let context = Unmanaged<TapContext>.fromOpaque(userInfo).takeUnretainedValue()
-    // Read the event here. The CGEvent itself must not leave the callback.
     let location = event.location
     let flags = event.flags
     let code = event.getIntegerValueField(.keyboardEventKeycode)
     let isRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
     let character = type == .keyDown ? NSEvent(cgEvent: event)?.charactersIgnoringModifiers : nil
-    // The tap sits on the main run loop, so this is the main thread.
     MainActor.assumeIsolated {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
@@ -123,8 +108,6 @@ private let tapCallback: CGEventTapCallBack = { _, type, event, userInfo in
     }
     return Unmanaged.passUnretained(event)
 }
-
-// MARK: - Click ripple
 
 @MainActor
 private enum ClickRipple {
@@ -175,8 +158,6 @@ private enum ClickRipple {
         }
     }
 }
-
-// MARK: - Key pill
 
 @MainActor
 private final class KeyPill {

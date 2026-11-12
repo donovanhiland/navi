@@ -33,7 +33,6 @@ struct AudioMixdownTests {
         return try #require(sample)
     }
 
-    /// An MP4 with one video track and two audio tracks, one second long.
     private func makeTwoTrackVideo() async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "navi-mix-\(UUID().uuidString).mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
@@ -87,7 +86,6 @@ struct AudioMixdownTests {
         #expect(try await asset.loadTracks(withMediaType: .video).count == 1)
         let duration = try await asset.load(.duration).seconds
         #expect(abs(duration - 1) < 0.15)
-        // The temp file is gone.
         let leftovers = try FileManager.default.contentsOfDirectory(atPath: url.deletingLastPathComponent().path)
             .filter { $0.hasPrefix("mix-") }
         #expect(leftovers.isEmpty)

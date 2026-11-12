@@ -1,30 +1,17 @@
 import AppKit
 import SwiftUI
 
-/// Edit after capture: the frame around the canvas, so a rough first drag can be fixed.
-///
-/// Soft corner brackets sit just outside the frame, so they never cover the shot and still show on
-/// white. When the pointer comes near (`reveal` 0 → 1) they grow, and ticks on all four edges and a
-/// move tab above the frame (move icon and pixel size) fade in. Drag any edge or corner, the top one
-/// too, to resize; drag the tab to move. The tab sits apart from the edge so the two never mix.
-/// After rotate, flip, or resize the frame is locked, and only the line shows.
 struct FrameAdjuster: View {
-    /// The canvas on the screen, in top-left points.
     let frame: CGRect
     let pixelSize: CGSize
     let screenSize: CGSize
     let canAdjust: Bool
-    /// 0 at rest, 1 while the pointer is near or a drag is on.
     let reveal: CGFloat
-    /// A drag of the frame started or ended.
     let onDragging: (Bool) -> Void
-    /// The frame during a drag, in top-left points.
     let onChange: (CGRect) -> Void
 
     static let gap: CGFloat = 4
-    /// How far from the line a drag still grabs an edge or corner (outside the frame).
     static let grab: CGFloat = 10
-    /// How far inside the frame an edge can be grabbed. Small, so drawing near the edge still works.
     private static let grabInside: CGFloat = 4
     private static let minSize: CGFloat = 8
     private static let shadow = Color.black.opacity(0.45)
@@ -46,8 +33,6 @@ struct FrameAdjuster: View {
         }
     }
 
-    // MARK: Look
-
     private var marks: some View {
         let outer = frame.insetBy(dx: -Self.gap, dy: -Self.gap)
         return ZStack(alignment: .topLeading) {
@@ -60,9 +45,6 @@ struct FrameAdjuster: View {
         .allowsHitTesting(false)
     }
 
-    // MARK: Drag
-
-    /// A band around the line: outside up to `grab`, inside only `grabInside`.
     private var grabRing: some View {
         let outer = frame.insetBy(dx: -Self.grab, dy: -Self.grab)
         let inner = frame.insetBy(dx: Self.grabInside, dy: Self.grabInside)
@@ -85,8 +67,6 @@ struct FrameAdjuster: View {
             )
     }
 
-    /// A tab above the frame, apart from the top edge, with a move icon and the pixel size. Drag it
-    /// to move the frame. Inside the top edge when there is no room above.
     private var moveTab: some View {
         let zone = Self.moveTabZone(of: frame)
         return HStack(spacing: 4) {
@@ -122,13 +102,9 @@ struct FrameAdjuster: View {
     }
 
     static let tabHeight: CGFloat = 20
-    /// Space between the tab and the frame line. More than `grab`, so the tab never covers the top edge.
     private static let tabGap: CGFloat = grab + 4
-    /// Wide enough for the widest tab (icon and a 5 × 4 digit size).
     private static let tabZoneWidth: CGFloat = 130
 
-    /// Where the move tab sits: above the frame, clear of the top edge's grab band, or inside the
-    /// top edge (below its band) when the frame is too close to the top of the screen.
     static func moveTabZone(of frame: CGRect) -> CGRect {
         let fitsAbove = frame.minY >= tabGap + tabHeight
         let y = fitsAbove ? frame.minY - tabGap - tabHeight : frame.minY + grabInside + 6
@@ -169,7 +145,6 @@ struct FrameAdjuster: View {
     }
 }
 
-/// Rounded L brackets on the four corners of `rect`. `length` animates.
 private struct FrameBrackets: Shape {
     var rect: CGRect
     var length: CGFloat
@@ -196,8 +171,6 @@ private struct FrameBrackets: Shape {
     }
 }
 
-/// Short ticks at the middle of each edge, so every edge reads as one you can drag.
-/// Only on edges long enough that a tick does not crowd the brackets.
 private struct FrameTicks: Shape {
     let rect: CGRect
     let inner: CGRect
@@ -222,7 +195,6 @@ private struct FrameTicks: Shape {
     }
 }
 
-/// The area between two rects, for hit testing with the even-odd rule.
 private struct GrabRing: Shape {
     let outer: CGRect
     let inner: CGRect

@@ -13,7 +13,6 @@ struct NaviApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        // The menu bar icon and its menu are AppKit (`NaviMenu`), so a hot key can open the menu.
         Settings { EmptyView() }
     }
 }
@@ -24,9 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     lazy var clipboard = ClipboardFeature(inbox: inbox)
     lazy var capture = CaptureFeature(inbox: inbox)
     let recording = RecordingFeature()
-    /// Sparkle: checks the appcast on the GitHub Releases page once a day, and from the menu.
-    /// Off in Debug builds, so a release never replaces the development copy (it has a different
-    /// signature, and macOS would ask for every permission again).
     #if DEBUG
     let updater = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: nil, userDriverDelegate: nil)
     #else
@@ -34,7 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
     lazy var dictation = DictationFeature(inbox: inbox)
     private let historyStore = HistoryShortcutStore(defaults: .standard)
-    /// The shortcut that opens the history. The user can change it from the menu.
     private(set) lazy var historyShortcut: KeyCombo = historyStore.load()
     private var historyHotKey: HotKey?
     private var menuHotKey: HotKey?
@@ -49,7 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "App")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // First launch (or no access yet): macOS asks for Screen Recording and lists Navi in Settings.
         if !CaptureFeature.hasScreenAccess { CaptureFeature.requestScreenAccess(openSettings: false) }
         clipboard.start()
         clipboard.onAnnotate = { [weak self] item in self?.capture.annotate(inboxID: item.id) }
@@ -64,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         switch capture.settings.useNaviScreenshotKeys {
         case true?: setUseNaviScreenshotKeys(true)
-        case false?: SystemScreenshotShortcuts.giveBack() // Left over from a crash.
+        case false?: SystemScreenshotShortcuts.giveBack()
         case nil: askAboutScreenshotKeys()
         }
         if !dictation.hasChosen { askAboutTalkToType() }
@@ -74,12 +68,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Give macOS its keys back, so they work when Navi is quit or deleted.
         SystemScreenshotShortcuts.giveBack()
         dictation.stop()
         dictation.giveBackFnKey()
         recording.stop()
-        inbox.flush() // History saves run in the background; wait so the last change is on disk.
+        inbox.flush()
     }
 
     private func askAboutTalkToType() {
@@ -97,7 +90,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setTalkToType(use)
     }
 
-    /// Talk to type: hold fn. On: the macOS fn key action is "Do Nothing" while Navi runs.
     func setTalkToType(_ on: Bool) {
         dictation.isEnabled = on
         if on {
@@ -108,7 +100,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Connects screen recording to the capture overlay and the corner cards.
     private func wireRecording() {
         recording.onError = { CaptureFeature.showMessage($0.localizedDescription) }
         capture.videoTools = VideoTools(
@@ -130,7 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Registers every Navi shortcut from its current combo. Starts by unregistering, so calling it again is safe.
     private func registerHotKeys() {
         unregisterHotKeys()
         historyHotKey = makeHistoryHotKey(historyShortcut)
@@ -160,14 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         screenshotHotKeys = []
     }
 
-    /// Turns off every Navi shortcut, so the recorder receives the keys. Paired with `resumeHotKeys`.
     func suspendHotKeys() {
         logger.info("Navi shortcuts suspended")
         unregisterHotKeys()
     }
 
-    /// Turns Navi's shortcuts back on after `suspendHotKeys`, with the current combos. Waits one turn of the
-    /// run loop, so a shortcut the user just typed is no longer being handled when Carbon registers it again.
     func resumeHotKeys() {
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -176,14 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Opens the recorder. Navi's shortcuts are off while it is open.
     func changeHistoryShortcut() {
         suspendHotKeys()
         shortcutRecorder.show(current: historyShortcut)
     }
 
-    /// Changes the History shortcut. It must not clash with Navi's other shortcuts, and macOS or another app
-    /// must accept it. If macOS refuses, the old shortcut comes back. The change is saved only when applied.
     func setHistoryShortcut(_ combo: KeyCombo) -> HistoryShortcutChange {
         if let error = combo.validate(reserved: NaviHotKeys.reserved) { return .invalid(error) }
         let wasRegistered = historyHotKey != nil
@@ -193,8 +177,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if wasRegistered { historyHotKey = makeHistoryHotKey(historyShortcut) }
             return .refused
         }
-        // While the recorder has the shortcuts suspended, the hot key was only a probe: `resumeHotKeys`
-        // registers the real one once, after the recorder closes.
         if wasRegistered { historyHotKey = hotKey } else { hotKey.unregister() }
         historyShortcut = combo
         if combo == .defaultHistory {
@@ -209,7 +191,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         register("History", combo) { [weak self] in self?.clipboard.togglePanel() }
     }
 
-    /// Turns Navi's screenshot keys (⇧⌘3, ⇧⌘4, ⇧⌘5, ⌃⇧⌘3, ⌃⇧⌘4) on or off. On: the macOS screenshot keys are off while Navi runs.
     func setUseNaviScreenshotKeys(_ use: Bool) {
         capture.settings.useNaviScreenshotKeys = use
         for hotKey in screenshotHotKeys { hotKey.unregister() }
@@ -249,7 +230,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUseNaviScreenshotKeys(alert.runModal() == .alertFirstButtonReturn)
     }
 
-    /// `pkill` and `kill` send SIGTERM, which skips `applicationWillTerminate`. Quit the normal way instead.
     private func quitCleanlyOnSignals() {
         for sig in [SIGTERM, SIGINT, SIGHUP] {
             signal(sig, SIG_IGN)
@@ -268,8 +248,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return hotKey
     }
 
-    /// Opening Navi again while it runs (Finder, Spotlight, `open`) shows the history.
-    /// This helps when the menu bar icon is hidden behind the notch.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         clipboard.showPanel()
         return false

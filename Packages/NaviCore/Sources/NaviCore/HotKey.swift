@@ -1,19 +1,15 @@
 import Carbon.HIToolbox
 
-/// A global keyboard shortcut. Uses the Carbon hot key API, so it needs no Accessibility permission.
-///
-/// Example: `HotKey(keyCode: UInt32(kVK_ANSI_V), modifiers: UInt32(cmdKey | shiftKey)) { ... }`
 @MainActor
 public final class HotKey {
     private static var actions: [UInt32: () -> Void] = [:]
     private static var nextID: UInt32 = 1
     private static var handlerInstalled = false
-    private static let signature: OSType = 0x4E41_5649 // "NAVI"
+    private static let signature: OSType = 0x4E41_5649
 
     private let id: UInt32
     private var ref: EventHotKeyRef?
 
-    /// Returns nil when macOS does not accept the shortcut, for example when another app owns it.
     public init?(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
         Self.installHandlerIfNeeded()
         id = Self.nextID
@@ -45,7 +41,6 @@ public final class HotKey {
             )
             guard status == noErr else { return status }
             let id = hotKeyID.id
-            // Carbon calls application event handlers on the main thread.
             MainActor.assumeIsolated { HotKey.actions[id]?() }
             return noErr
         }, 1, &spec, nil, nil)

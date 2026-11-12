@@ -1,13 +1,11 @@
 import CoreGraphics
 import Foundation
 
-/// A pretty background behind a capture: fill, padding, rounded corners, shadow, and aspect ratio.
 public struct BackgroundStyle: Codable, Equatable, Sendable {
     public enum Fill: Codable, Equatable, Sendable {
         case none
         case gradient(Int)
         case solid(RGBA)
-        /// A picture file on disk.
         case image(String)
     }
 
@@ -36,18 +34,14 @@ public struct BackgroundStyle: Codable, Equatable, Sendable {
     }
 
     public var fill: Fill = .gradient(0)
-    /// In points.
     public var padding: Double = 64
-    /// In points.
     public var cornerRadius: Double = 10
     public var shadow = true
     public var aspect: Aspect = .auto
-    /// Trims uneven plain margins so the content sits in the middle.
     public var autoBalance = false
 
     public init() {}
 
-    /// Gradient presets: top-left color, bottom-right color.
     static let gradients: [(RGBA, RGBA)] = [
         (RGBA(red: 0.40, green: 0.49, blue: 0.98), RGBA(red: 0.77, green: 0.38, blue: 0.93)),
         (RGBA(red: 0.98, green: 0.55, blue: 0.36), RGBA(red: 0.96, green: 0.29, blue: 0.51)),
@@ -61,8 +55,6 @@ public struct BackgroundStyle: Codable, Equatable, Sendable {
 }
 
 enum BackgroundLayout {
-    /// The canvas size for content of `content` size with `padding` on each side, widened or
-    /// heightened to match `ratio` (width / height) when set.
     static func canvasSize(content: CGSize, padding: CGFloat, ratio: CGFloat?) -> CGSize {
         var size = CGSize(width: content.width + padding * 2, height: content.height + padding * 2)
         guard let ratio, ratio > 0 else { return size }
@@ -75,10 +67,7 @@ enum BackgroundLayout {
     }
 }
 
-/// Finds plain margins around content and evens them out.
 enum AutoBalance {
-    /// The crop rect (top-left pixels) that gives equal plain margins on all sides.
-    /// `pixel(x, y)` returns the RGBA bytes at a pixel. Returns the full rect when there is no plain margin.
     static func balancedRect(width: Int, height: Int, tolerance: Int = 8, pixel: (Int, Int) -> (UInt8, UInt8, UInt8, UInt8)) -> CGRect {
         let full = CGRect(x: 0, y: 0, width: width, height: height)
         guard width > 2, height > 2 else { return full }
@@ -93,7 +82,7 @@ enum AutoBalance {
 
         var top = 0
         while top < height, rowPlain(top) { top += 1 }
-        guard top < height else { return full } // All one color.
+        guard top < height else { return full }
         var bottom = 0
         while bottom < height - top, rowPlain(height - 1 - bottom) { bottom += 1 }
         var left = 0
@@ -109,7 +98,6 @@ enum AutoBalance {
     }
 }
 
-/// Saved background presets, by name.
 @MainActor
 enum BackgroundPresets {
     private static let key = "capture.backgroundPresets"
@@ -132,7 +120,6 @@ enum BackgroundPresets {
         UserDefaults.standard.set(try? JSONEncoder().encode(presets), forKey: key)
     }
 
-    /// The style used last, so the tool opens the way you left it.
     static var last: BackgroundStyle {
         get {
             UserDefaults.standard.data(forKey: lastKey).flatMap { try? JSONDecoder().decode(BackgroundStyle.self, from: $0) }

@@ -188,7 +188,6 @@ struct InboxSearchTests {
         let reloaded = Inbox(directory: directory)
         reloaded.searchBudget = .zero
         let versionBefore = reloaded.searchKeysVersion
-        // The background build cannot install before this task yields, so no key exists yet.
         #expect(reloaded.search("reuniao").isEmpty)
         #expect(reloaded.deferredSearchItems == 40)
         while !reloaded.isSearchReady { try await Task.sleep(for: .milliseconds(5)) }
@@ -235,7 +234,6 @@ struct InboxSearchTests {
         reloaded.searchBudget = .seconds(10)
         var found: [CaptureItem] = []
         let elapsed = ContinuousClock().measure { found = reloaded.search("агентство") }
-        // The budget is generous, so only the size rule can have skipped the huge item.
         #expect(found.isEmpty)
         #expect(reloaded.deferredSearchItems == 1)
         #expect(!reloaded.isSearchReady)
@@ -250,7 +248,6 @@ struct InboxSearchTests {
         inbox.add(text: "alpha", now: start)
         inbox.add(text: "beta", now: start + 1)
         #expect(inbox.searchKeyCount == 2)
-        // The limit evicts "alpha". Two keys and two items before and after, so a count check would miss a stale key.
         inbox.add(text: "gamma", now: start + 2)
         #expect(inbox.items.map(\.text) == ["gamma", "beta"])
         #expect(inbox.searchKeyCount == 2)
@@ -263,7 +260,6 @@ struct InboxSearchTests {
 
 }
 
-/// A small deterministic generator, so the fuzz test repeats exactly.
 private struct SeededGenerator: RandomNumberGenerator {
     var state: UInt64
     init(seed: UInt64) { state = seed }

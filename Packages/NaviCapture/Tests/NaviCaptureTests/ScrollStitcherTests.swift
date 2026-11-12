@@ -4,7 +4,6 @@ import Testing
 @testable import NaviCapture
 
 @Suite struct ScrollStitcherTests {
-    /// A 200 x 600 image of noise, so Vision can line frames up.
     private func noise(width: Int = 200, height: Int = 600) -> CGImage {
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
         var seed: UInt64 = 42

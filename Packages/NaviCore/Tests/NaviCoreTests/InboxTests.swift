@@ -8,7 +8,6 @@ final class InboxTests {
     let directory = FileManager.default.temporaryDirectory.appending(path: "NaviTests-\(UUID().uuidString)")
     let start = Date(timeIntervalSince1970: 1_000_000)
 
-    /// Waits for every background write, then removes the temp directory, so no late write recreates it.
     isolated deinit {
         opened.forEach { $0.flush() }
         try? FileManager.default.removeItem(at: directory)
@@ -127,8 +126,6 @@ final class InboxTests {
         #expect(!FileManager.default.fileExists(atPath: markup.path))
     }
 
-    /// Two shots of the same pixels must be two items. Before, the second shot reused the first item,
-    /// so its card opened the first shot's markup in the editor.
     @Test func sameCaptureTwiceMakesTwoItemsWhenNotDeduplicated() throws {
         let inbox = make(directory: directory)
         let png = Data([1, 2, 3])
@@ -200,7 +197,6 @@ final class InboxTests {
         let item = try #require(inbox.add(fileData: Data([9]), fileExtension: "png", kind: .screenshot))
         let url = try #require(inbox.fileURL(for: item))
         inbox.flush()
-        // A read-only folder makes the atomic write of history.json fail.
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
         inbox.remove(item.id)
         inbox.flush()
@@ -240,7 +236,6 @@ final class InboxTests {
     }
 }
 
-/// Records, each time the writer is about to delete, whether the file still exists and the JSON references it.
 private final class Probe: @unchecked Sendable {
     struct Observation { var fileStillExists: Bool, jsonReferencesFile: Bool }
     private let lock = NSLock()

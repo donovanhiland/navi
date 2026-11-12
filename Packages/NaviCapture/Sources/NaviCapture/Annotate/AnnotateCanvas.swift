@@ -2,14 +2,9 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// The markup canvas: the shot with its marks, the selected mark's handles, the crop box, and the
-/// typing box. Drag to draw with the current tool. Drop an image in to combine.
 struct AnnotateCanvas: View {
     enum Layout {
-        /// Fit the shot inside the view with a margin, never above 100%. The editor window.
         case fitted
-        /// The shot at 100%, from the top left, with no margin or shadow. Edit after capture,
-        /// where the canvas sits exactly over the captured area.
         case actualSize
     }
 
@@ -56,7 +51,6 @@ struct AnnotateCanvas: View {
                     loadDroppedImage(providers)
                     return true
                 }
-                // The text box sits above the drawing gesture, so clicks and typing go to the box.
                 if let edit = model.textEdit {
                     textField(fit: fit)
                         .task(id: "\(edit.point.x),\(edit.point.y)") { isTyping = true }
@@ -70,7 +64,6 @@ struct AnnotateCanvas: View {
         }
     }
 
-    /// View points per image pixel.
     private func fit(in size: CGSize, pixels: CGSize) -> CGFloat {
         switch layout {
         case .actualSize:
@@ -126,9 +119,6 @@ struct AnnotateCanvas: View {
         }
     }
 
-    /// The typing box. Its own text is invisible: the canvas draws the typed text with the same
-    /// renderer as finished text, so nothing changes (font, outline, place) when the box closes.
-    /// The field only supplies the caret, keys, and the outline.
     private func textField(fit: CGFloat) -> some View {
         let point = model.textEdit?.point ?? .zero
         let fontSize = model.textEditFontSize * fit
@@ -143,7 +133,6 @@ struct AnnotateCanvas: View {
             .foregroundStyle(.clear)
             .tint(color)
             .frame(minWidth: 120, maxWidth: 400, alignment: .leading)
-            // The outline sits outside the text, so the text starts exactly at the mark's point.
             .background(RoundedRectangle(cornerRadius: 3).stroke(Color.accentColor, lineWidth: 1).padding(-3))
             .offset(x: point.x * fit, y: point.y * fit)
             .onSubmit(model.finishText)
@@ -167,8 +156,6 @@ struct AnnotateCanvas: View {
     }
 }
 
-/// The selected mark's dashed outline and handles, drawn at screen size so they stay easy
-/// to see and grab at any zoom.
 private struct MarkOutline: View {
     let mark: Annotation
     let fit: CGFloat
@@ -203,7 +190,6 @@ private struct MarkOutline: View {
         .allowsHitTesting(false)
     }
 
-    /// Box handles sit on the dashed outline. Line and arrow handles sit on the ends.
     private func handlePoint(_ handle: Annotation.Handle, outline: CGRect) -> CGPoint {
         guard mark.isBox else {
             let point = mark.point(of: handle)

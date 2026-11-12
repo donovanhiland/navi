@@ -24,7 +24,6 @@ import Testing
     @Test func rotatingClockwiseMovesPointsAndSwapsTheSize() {
         let (transform, size) = ImageEdit.rotateClockwise.transform(for: CGSize(width: 200, height: 100))
         #expect(size == CGSize(width: 100, height: 200))
-        // The top-left corner goes to the top right.
         #expect(CGPoint(x: 0, y: 0).applying(transform) == CGPoint(x: 100, y: 0))
         #expect(CGPoint(x: 200, y: 0).applying(transform) == CGPoint(x: 100, y: 200))
     }
@@ -89,10 +88,8 @@ import Testing
         let wider = mark.resized(.endXStartY, to: CGPoint(x: 200, y: 0))
         #expect(wider.start == CGPoint(x: 10, y: 0))
         #expect(wider.end == CGPoint(x: 200, y: 60))
-        // Grab anywhere along an edge, not just a dot.
         #expect(mark.handle(at: CGPoint(x: 40, y: 59), tolerance: 3) == .bottom)
         #expect(mark.handle(at: CGPoint(x: 9, y: 25), tolerance: 3) == .left)
-        // Edges work even when the box was drawn from the bottom right.
         var backwards = mark
         backwards.start = CGPoint(x: 110, y: 60)
         backwards.end = CGPoint(x: 10, y: 10)

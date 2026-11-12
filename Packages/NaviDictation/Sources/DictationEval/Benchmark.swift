@@ -1,14 +1,10 @@
 import Foundation
 
-/// One benchmark case: what the speech engine wrote, and what good cleanup gives.
 public struct BenchCase: Codable, Sendable, Equatable {
     public var id: String
     public var category: String
-    /// Raw speech-to-text output: lowercase, little punctuation, fillers and slips included.
     public var input: String
-    /// Acceptable cleaned results. The best match counts.
     public var expected: [String]
-    /// What to say out loud for the audio test. Defaults to `input`.
     public var spoken: String?
 
     public init(id: String, category: String, input: String, expected: [String], spoken: String? = nil) {
@@ -20,20 +16,14 @@ public struct BenchCase: Codable, Sendable, Equatable {
     }
 }
 
-/// How one output scored against one case.
 public struct CaseScore: Codable, Sendable, Equatable {
     public var id: String
     public var category: String
     public var output: String
-    /// Same words as an expected result (case and punctuation ignored), and no filler left.
     public var passed: Bool
-    /// Same text as an expected result, punctuation and capitals included.
     public var exact: Bool
-    /// 1 − word error rate against the closest expected result. 1 is perfect.
     public var wordAccuracy: Double
-    /// Filler sounds still in the output.
     public var fillersLeft: Int
-    /// Words in the output that are in neither the input nor any expected result: made-up words.
     public var inventedWords: [String]
     public var milliseconds: Double
 
@@ -56,7 +46,6 @@ public struct CaseScore: Codable, Sendable, Equatable {
 public enum Scoring {
     public static let fillers: Set<String> = ["um", "umm", "uh", "uhh", "er", "erm", "ah", "hmm", "mm"]
 
-    /// Lowercase words, without punctuation. Keeps inner apostrophes, dots, and hyphens ("don't", "3.5", "e-mail").
     public static func words(_ text: String) -> [String] {
         text.lowercased()
             .replacingOccurrences(of: "’", with: "'")
@@ -65,7 +54,6 @@ public enum Scoring {
             .filter { !$0.isEmpty }
     }
 
-    /// Word-level edit distance (insertions, deletions, substitutions).
     public static func editDistance(_ a: [String], _ b: [String]) -> Int {
         if a.isEmpty { return b.count }
         if b.isEmpty { return a.count }
@@ -80,7 +68,6 @@ public enum Scoring {
         return previous[b.count]
     }
 
-    /// Word error rate of `hypothesis` against `reference`, from 0 (perfect) up.
     public static func wordErrorRate(_ hypothesis: String, reference: String) -> Double {
         let ref = words(reference)
         let hyp = words(hypothesis)
@@ -111,7 +98,6 @@ public enum Scoring {
     }
 }
 
-/// Totals for a group of scores.
 public struct Summary: Codable, Sendable, Equatable {
     public var name: String
     public var cases: Int
@@ -137,7 +123,6 @@ public struct Summary: Codable, Sendable, Equatable {
         p95Milliseconds = Self.percentile(times, 0.95)
     }
 
-    /// Nearest-rank percentile of sorted values.
     public static func percentile(_ sorted: [Double], _ p: Double) -> Double {
         guard !sorted.isEmpty else { return 0 }
         let rank = Int((p * Double(sorted.count)).rounded(.up)) - 1
@@ -145,7 +130,6 @@ public struct Summary: Codable, Sendable, Equatable {
     }
 }
 
-/// A full run of one engine, saved so runs can be compared over time.
 public struct BenchRun: Codable, Sendable {
     public var engine: String
     public var date: Date
@@ -164,7 +148,6 @@ public struct BenchRun: Codable, Sendable {
 }
 
 public enum Report {
-    /// A plain-text table: one row per category, one column group per engine.
     public static func table(_ runs: [BenchRun]) -> String {
         guard let first = runs.first else { return "" }
         let rows = first.categories.map(\.name) + ["overall"]

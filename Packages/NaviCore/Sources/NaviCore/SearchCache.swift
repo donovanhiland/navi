@@ -1,7 +1,5 @@
 import Foundation
 
-/// Folded search keys for the history, so a search compares bytes instead of folding every item's text again.
-/// Search ignores case, accents and character width in every locale.
 struct SearchCache {
     struct Key: Sendable {
         let text: [UInt8]
@@ -28,8 +26,6 @@ struct SearchCache {
         items.allSatisfy { keys[$0.id] != nil }
     }
 
-    /// The items whose text or source app contains `query`, in the order of `items`. Missing keys are built here
-    /// until `budget` runs out; the rest count in `deferred`. Items above `Inbox.inlineKeyLimit` are left to the background build.
     mutating func search(
         _ query: String, in items: [CaptureItem], budget: Duration
     ) -> (items: [CaptureItem], deferred: Int) {
@@ -57,7 +53,6 @@ struct SearchCache {
         return (found, deferred)
     }
 
-    /// Builds a key without touching any cache; safe off the main actor.
     static func makeKey(text: String?, sourceApp: String?) -> Key {
         Key(text: Self.fold(text ?? ""), sourceApp: Self.fold(sourceApp ?? ""))
     }

@@ -5,7 +5,9 @@ import SwiftUI
 
 enum Metrics {
     static let width: CGFloat = 450
-    static let headerHeight: CGFloat = 44
+    static let searchHeight: CGFloat = 44
+    static let scopeHeight: CGFloat = 26
+    static let headerHeight: CGFloat = searchHeight + scopeHeight
     static let textRowHeight: CGFloat = 24
     static let imageRowHeight: CGFloat = 50
     static let listPadding: CGFloat = 5
@@ -19,11 +21,36 @@ enum Metrics {
     }
 }
 
+public enum HistoryScope: CaseIterable, Sendable {
+    case all, text, images, dictation
+
+    var title: String {
+        switch self {
+        case .all: "All"
+        case .text: "Text"
+        case .images: "Images"
+        case .dictation: "Dictation"
+        }
+    }
+
+    func includes(_ kind: CaptureKind) -> Bool {
+        switch self {
+        case .all: true
+        case .text: kind == .text
+        case .images: kind == .image || kind == .screenshot || kind == .recording
+        case .dictation: kind == .dictation
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class ClipboardModel {
     let inbox: Inbox
     public var query = "" {
+        didSet { select(0) }
+    }
+    public var scope = HistoryScope.all {
         didSet { select(0) }
     }
     var selection = 0 {
@@ -40,7 +67,9 @@ public final class ClipboardModel {
     @ObservationIgnored private let images = NSCache<NSString, NSImage>()
     @ObservationIgnored private var decoding: [NSString: Task<CGImage?, Never>] = [:]
     @ObservationIgnored private var appIcons: [String: NSImage] = [:]
-    @ObservationIgnored private var lastSearch: (query: String, items: Int, keys: Int, results: [CaptureItem])?
+    @ObservationIgnored private var lastSearch: (
+        query: String, scope: HistoryScope, items: Int, keys: Int, results: [CaptureItem]
+    )?
 
     public init(inbox: Inbox) {
         self.inbox = inbox
@@ -48,15 +77,18 @@ public final class ClipboardModel {
 
     public var results: [CaptureItem] {
         let query = self.query
+        let scope = self.scope
         _ = inbox.items
         let items = inbox.itemsVersion, keys = inbox.searchKeysVersion
-        if let lastSearch, lastSearch.query == query, lastSearch.items == items, lastSearch.keys == keys {
+        if let lastSearch, lastSearch.query == query, lastSearch.scope == scope,
+           lastSearch.items == items, lastSearch.keys == keys {
             return lastSearch.results
         }
         let interval = HistorySignpost.signposter.beginInterval("Search")
-        let results = inbox.search(query)
+        var results = inbox.search(query)
+        if scope != .all { results.removeAll { !scope.includes($0.kind) } }
         HistorySignpost.signposter.endInterval("Search", interval)
-        lastSearch = (query, items, keys, results)
+        lastSearch = (query, scope, items, keys, results)
         return results
     }
 
@@ -98,9 +130,16 @@ public final class ClipboardModel {
 
     func reset() {
         query = ""
+        scope = .all
         select(0)
         opens += 1
         lastHoverLocation = NSEvent.mouseLocation
+    }
+
+    func cycleScope(by offset: Int) {
+        let all = HistoryScope.allCases
+        let index = all.firstIndex(of: scope) ?? 0
+        scope = all[(index + offset + all.count) % all.count]
     }
 
     func move(by offset: Int) {

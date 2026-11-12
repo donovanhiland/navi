@@ -50,6 +50,9 @@ final class NaviMenu: NSObject, NSMenuDelegate {
             app.setTalkToType(!app.dictation.isEnabled)
         })
         if app.dictation.isEnabled {
+            menu.addItem(item("Paste Last Dictation", key: "v", [.shift, .option]) { [app] in
+                app.dictation.pasteLastDictation()
+            })
             menu.addItem(item("Keep Microphone Ready", on: app.dictation.keepsMicrophoneReady) { [app] in
                 app.dictation.keepsMicrophoneReady.toggle()
             })

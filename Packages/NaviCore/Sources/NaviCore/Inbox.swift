@@ -12,6 +12,7 @@ public final class Inbox {
     @ObservationIgnored public private(set) var itemsVersion = 0
     public let directory: URL
     public var limit: Int
+    public var dictationLimit: Int
 
     @ObservationIgnored private let writer: HistoryWriter
     @ObservationIgnored private var doomedFiles: [URL] = []
@@ -26,13 +27,14 @@ public final class Inbox {
         return URL.applicationSupportDirectory.appending(path: name, directoryHint: .isDirectory)
     }
 
-    public convenience init(directory: URL = Inbox.defaultDirectory, limit: Int = 200) {
-        self.init(directory: directory, limit: limit, beforeDeleting: nil)
+    public convenience init(directory: URL = Inbox.defaultDirectory, limit: Int = 200, dictationLimit: Int = 200) {
+        self.init(directory: directory, limit: limit, dictationLimit: dictationLimit, beforeDeleting: nil)
     }
 
-    init(directory: URL, limit: Int, beforeDeleting: (@Sendable () -> Void)?) {
+    init(directory: URL, limit: Int, dictationLimit: Int = 200, beforeDeleting: (@Sendable () -> Void)?) {
         self.directory = directory
         self.limit = limit
+        self.dictationLimit = dictationLimit
         self.writer = HistoryWriter(directory: directory, beforeDeleting: beforeDeleting)
         load()
         warmSearch(items)
@@ -186,14 +188,22 @@ public final class Inbox {
 
     private func trimAndSave() {
         var unpinnedCount = 0
+        var dictationCount = 0
         var kept: [CaptureItem] = []
         for item in items {
             if item.pinned {
                 kept.append(item)
                 continue
             }
-            unpinnedCount += 1
-            if unpinnedCount <= limit {
+            let withinLimit: Bool
+            if item.kind == .dictation {
+                dictationCount += 1
+                withinLimit = dictationCount <= dictationLimit
+            } else {
+                unpinnedCount += 1
+                withinLimit = unpinnedCount <= limit
+            }
+            if withinLimit {
                 kept.append(item)
             } else {
                 discard(item)

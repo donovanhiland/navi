@@ -232,6 +232,12 @@ final class ClipboardPanelController {
         case 36, 76:
             if let item = model.selectedItem { choose(item) }
             return true
+        case 48 where flags.isEmpty:
+            model.cycleScope(by: 1)
+            return true
+        case 48 where flags == .shift:
+            model.cycleScope(by: -1)
+            return true
         case 125:
             model.move(by: 1)
             return true

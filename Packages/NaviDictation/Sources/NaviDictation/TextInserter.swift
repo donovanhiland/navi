@@ -8,7 +8,7 @@ enum TextInserter {
 
     private static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 
-    private struct SavedItem {
+    struct SavedItem {
         let entries: [(type: NSPasteboard.PasteboardType, data: Data)]
     }
 
@@ -29,7 +29,7 @@ enum TextInserter {
         restore(saved, to: pasteboard)
     }
 
-    private static func save(_ pasteboard: NSPasteboard) -> [SavedItem] {
+    static func save(_ pasteboard: NSPasteboard) -> [SavedItem] {
         (pasteboard.pasteboardItems ?? []).map { item in
             SavedItem(entries: item.types.compactMap { type in
                 item.data(forType: type).map { (type, $0) }
@@ -37,7 +37,7 @@ enum TextInserter {
         }
     }
 
-    private static func restore(_ saved: [SavedItem], to pasteboard: NSPasteboard) {
+    static func restore(_ saved: [SavedItem], to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
         guard !saved.isEmpty else { return }
         let items = saved.map { saved -> NSPasteboardItem in
@@ -45,6 +45,7 @@ enum TextInserter {
             for entry in saved.entries { item.setData(entry.data, forType: entry.type) }
             return item
         }
+        items[0].setData(Data(), forType: NaviPasteboard.ownType)
         pasteboard.writeObjects(items)
     }
 

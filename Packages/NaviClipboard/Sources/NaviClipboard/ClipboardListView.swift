@@ -22,6 +22,14 @@ struct ClipboardListView: View {
     }
 
     private var header: some View {
+        VStack(spacing: 0) {
+            search
+            scopes
+        }
+        .frame(height: Metrics.headerHeight)
+    }
+
+    private var search: some View {
         HStack(spacing: 10) {
             Text("Navi")
                 .foregroundStyle(.secondary)
@@ -37,13 +45,36 @@ struct ClipboardListView: View {
             .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
         }
         .padding(.horizontal, 14)
-        .frame(height: Metrics.headerHeight)
+        .frame(height: Metrics.searchHeight)
+    }
+
+    private var scopes: some View {
+        HStack(spacing: 4) {
+            ForEach(HistoryScope.allCases, id: \.self) { scope in
+                let selected = model.scope == scope
+                Text(scope.title)
+                    .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Color.white : Color.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .background(selected ? Color.accentColor : Color.primary.opacity(0.06), in: Capsule())
+                    .contentShape(Capsule())
+                    .onTapGesture { model.scope = scope }
+            }
+            Spacer()
+            Text("⇥")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
+        .frame(height: Metrics.scopeHeight)
     }
 
     @ViewBuilder
     private func list(_ results: [CaptureItem]) -> some View {
         if results.isEmpty {
-            Text(model.query.isEmpty ? "Copy something to start." : "No matches.")
+            Text(model.query.isEmpty && model.scope == .all ? "Copy something to start." : "No matches.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                 .padding(.horizontal, 15)

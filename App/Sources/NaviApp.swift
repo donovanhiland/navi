@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuHotKey: HotKey?
     private var extraHotKeys: [HotKey] = []
     private var screenshotHotKeys: [HotKey] = []
+    private var pasteLastHotKey: HotKey?
     private lazy var naviMenu = NaviMenu(app: self)
     private lazy var shortcutRecorder = HistoryShortcutRecorder(
         apply: { [weak self] in self?.setHistoryShortcut($0) ?? .refused },
@@ -98,6 +99,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             dictation.giveBackFnKey()
         }
+        updatePasteLastHotKey()
+    }
+
+    private func updatePasteLastHotKey() {
+        pasteLastHotKey?.unregister()
+        pasteLastHotKey = nil
+        guard dictation.isEnabled else { return }
+        pasteLastHotKey = register("Paste Last Dictation", NaviHotKeys.pasteLastDictation) { [weak self] in
+            self?.dictation.pasteLastDictation()
+        }
     }
 
     private func wireRecording() {
@@ -138,12 +149,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if capture.settings.useNaviScreenshotKeys == true {
             screenshotHotKeys = makeScreenshotHotKeys()
         }
+        updatePasteLastHotKey()
     }
 
     private func unregisterHotKeys() {
         historyHotKey?.unregister()
         menuHotKey?.unregister()
         for hotKey in extraHotKeys + screenshotHotKeys { hotKey.unregister() }
+        pasteLastHotKey?.unregister()
+        pasteLastHotKey = nil
         historyHotKey = nil
         menuHotKey = nil
         extraHotKeys = []

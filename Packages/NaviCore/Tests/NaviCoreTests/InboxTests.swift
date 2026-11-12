@@ -13,8 +13,10 @@ final class InboxTests {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func make(directory: URL, limit: Int = 200, beforeDeleting: (@Sendable () -> Void)? = nil) -> Inbox {
-        let inbox = Inbox(directory: directory, limit: limit, beforeDeleting: beforeDeleting)
+    private func make(
+        directory: URL, limit: Int = 200, dictationLimit: Int = 200, beforeDeleting: (@Sendable () -> Void)? = nil
+    ) -> Inbox {
+        let inbox = Inbox(directory: directory, limit: limit, dictationLimit: dictationLimit, beforeDeleting: beforeDeleting)
         opened.append(inbox)
         return inbox
     }
@@ -72,6 +74,15 @@ final class InboxTests {
         inbox.add(text: "b", now: start + 2)
         inbox.add(text: "c", now: start + 3)
         #expect(inbox.items.map(\.text) == ["keep", "c", "b"])
+    }
+
+    @Test func dictationsHaveTheirOwnLimit() {
+        let inbox = make(directory: directory, limit: 2, dictationLimit: 1)
+        inbox.add(text: "clip a", now: start)
+        inbox.add(text: "clip b", now: start + 1)
+        inbox.add(text: "said one", kind: .dictation, now: start + 2)
+        inbox.add(text: "said two", kind: .dictation, now: start + 3)
+        #expect(inbox.items.map(\.text) == ["said two", "clip b", "clip a"])
     }
 
     @Test func searchIgnoresCase() {

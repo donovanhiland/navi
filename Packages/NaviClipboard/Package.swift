@@ -12,5 +12,6 @@ let package = Package(
     targets: [
         .target(name: "NaviClipboard", dependencies: ["NaviCore"]),
         .executableTarget(name: "HistoryBench", dependencies: ["NaviClipboard", "NaviCore"]),
+        .testTarget(name: "NaviClipboardTests", dependencies: ["NaviClipboard", "NaviCore"]),
     ]
 )

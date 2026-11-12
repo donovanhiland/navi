@@ -82,6 +82,21 @@ public final class DictationFeature {
         }
     }
 
+    public func pasteLastDictation() {
+        guard session == nil, !isProcessing else { return }
+        let last = inbox.items.filter { $0.kind == .dictation }.max { $0.createdAt < $1.createdAt }
+        guard let text = last?.text else {
+            onProblem?("No dictation yet.")
+            return
+        }
+        guard TextInserter.hasAccessibility else {
+            TextInserter.requestAccessibility()
+            onProblem?("Navi needs the Accessibility permission to type your text.")
+            return
+        }
+        Task { await TextInserter.insert(text) }
+    }
+
     public func borrowFnKey() { SystemFnKey.takeOver() }
 
     public func giveBackFnKey() { SystemFnKey.giveBack() }

@@ -58,7 +58,11 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   `SpeechAnalyzer` or `SFSpeechRecognizer` until the Parakeet model is loaded.
   The model, about 0.5 GB, downloads on first start to
   `~/Library/Application Support/FluidAudio/Models`), cleanup with Foundation Models or rules, paste at the
-  cursor, then the old clipboard comes back. Speed: the pill shows on the
+  cursor, then the old clipboard comes back (marked as Navi's, so the
+  history does not list the old copy again above the dictation). Each
+  dictation is a `.dictation` item in the shared history. `⌥⇧V` (Hex's
+  default, and a menu item; only while talk to type is on) pastes the last
+  dictation again. Speed: the pill shows on the
   press. By default (like Wispr Flow) the mic is set up ahead of time but off,
   so there is no mic dot between dictations; a press only starts it. "Keep
   Microphone Ready" (menu, off by default; Hex's "Keep ready") keeps the mic
@@ -132,7 +136,7 @@ video editor.
   is the only button that starts a recording. `⇧⌘4` still captures as soon
   as the drag ends.
 - Other hotkeys: `⌥⇧⌘4` scrolling capture, `⌥⇧⌘T` capture text, `⌥⇧⌘5` record
-  (press again to stop).
+  (press again to stop), `⌥⇧V` paste last dictation.
 - Shots leave out Navi's overlays, cards, pins, and pills (window layer above 0)
   but keep Navi's normal windows, such as the markup editor.
 - The selection overlay is a non-activating panel: it takes Esc, Space, and the
@@ -221,7 +225,9 @@ video editor.
 
 - **Maccy (clipboard):** keyboard only. Hotkey, type to filter, Return to paste,
   `⌘1`–`⌘9`, `⌥P` pin, `⌥⌫` delete, `⌥⌘⌫` clear, a preview card beside the
-  selected row. Line breaks show as `⏎`.
+  selected row. Line breaks show as `⏎`. Navi adds scope chips under the
+  search field (All, Text, Images, Dictation); Tab and ⇧Tab move between them,
+  and each open starts at All. Images include screenshots and recordings.
 - **CleanShot X (capture):** crosshair with magnifier and pixel size, snap to
   windows, freeze screen. Corner card: on hover it blurs and shows round Copy and
   Save buttons. Corners: Pin (top left), Close (top right), Annotate or Trim
@@ -259,7 +265,8 @@ Xnapper's backgrounds, and macshot's auto-redact.
 
 `Inbox` keeps items in `~/Library/Application Support/Navi/` (`history.json`
 plus `files/`). Items sort by pinned, then by `lastUsedAt`. The newest 200
-unpinned items stay. Saves run on a background queue (`HistoryWriter`); call
+unpinned items stay, and separately the newest 200 unpinned dictations
+(`dictationLimit`), so dictation does not push out clips and captures. Saves run on a background queue (`HistoryWriter`); call
 `Inbox.flush()` before the process exits (`applicationWillTerminate` does).
 Search ignores case, accents and character width (`SearchCache`).
 New fields on `CaptureItem` must decode from old history

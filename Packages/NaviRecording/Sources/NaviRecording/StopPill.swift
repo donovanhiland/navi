@@ -21,7 +21,8 @@ final class StopPill {
     }
 
     var windowID: CGWindowID? {
-        item.button?.window.map { CGWindowID($0.windowNumber) }
+        guard let number = item.button?.window?.windowNumber, number > 0 else { return nil }
+        return CGWindowID(exactly: number)
     }
 
     func startTimer() {

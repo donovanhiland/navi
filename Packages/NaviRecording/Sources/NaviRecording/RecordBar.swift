@@ -278,7 +278,7 @@ final class RecordBarController {
     }
 
     var windowIDs: Set<CGWindowID> {
-        Set([barPanel, outlinePanel].compactMap { $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil })
+        Set([barPanel, outlinePanel].compactMap { $0.windowNumber > 0 ? CGWindowID(exactly: $0.windowNumber) : nil })
     }
 
     func show() {

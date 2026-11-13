@@ -7,6 +7,7 @@ struct BenchOptions {
     var save = false
     var json = false
     var corpus = Corpus.ascii
+    var only: Set<String>?
 
     init(arguments: [String]) throws {
         var remaining = arguments[...]
@@ -26,11 +27,17 @@ struct BenchOptions {
                     throw BenchError.usage("--corpus needs ascii or mixed, got \(text)")
                 }
                 corpus = chosen
+            case "--only":
+                only = Set(try Self.value(flag, &remaining).split(separator: ",").map(String.init))
             case "--save": save = true
             case "--json": json = true
             default: throw BenchError.usage("unknown option \(flag)")
             }
         }
+    }
+
+    func wants(_ name: String) -> Bool {
+        only?.contains(name) ?? true
     }
 
     private static func value(_ flag: String, _ remaining: inout ArraySlice<String>) throws -> String {

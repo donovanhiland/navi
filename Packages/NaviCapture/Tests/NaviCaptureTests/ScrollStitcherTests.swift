@@ -60,4 +60,27 @@ import Testing
         #expect(!second)
         #expect(stitcher.frames.count == 1)
     }
+
+    @Test func smallStepsKeepFewerFramesAndTheSamePicture() throws {
+        let page = noise(width: 150, height: 600)
+        var stitcher = ScrollStitcher()
+        for top in stride(from: 0, through: 300, by: 20) {
+            stitcher.append(try #require(page.cropping(to: CGRect(x: 0, y: top, width: 150, height: 300))), offset: top == 0 ? .zero : CGPoint(x: 0, y: 20))
+        }
+        #expect(stitcher.accepted == 16)
+        #expect(stitcher.frames.count < 8)
+        let result = try #require(stitcher.stitched())
+        #expect(result.width == 150 && result.height == 600)
+        let space = CGColorSpaceCreateDeviceRGB()
+        func pixels(_ image: CGImage) -> [UInt8] {
+            var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            let context = CGContext(
+                data: &bytes, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            return bytes
+        }
+        #expect(pixels(result) == pixels(try #require(page.cropping(to: CGRect(x: 0, y: 0, width: 150, height: 600)))))
+    }
 }

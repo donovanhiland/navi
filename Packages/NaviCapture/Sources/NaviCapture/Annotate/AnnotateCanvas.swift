@@ -26,6 +26,13 @@ struct AnnotateCanvas: View {
                             .frame(width: shown.width, height: shown.height)
                             .shadow(color: .black.opacity(layout == .fitted ? 0.25 : 0), radius: 12, y: 4)
                     }
+                    if let patch = model.patch {
+                        Image(decorative: patch.image, scale: 1)
+                            .resizable()
+                            .interpolation(.high)
+                            .frame(width: patch.rect.width * fit, height: patch.rect.height * fit)
+                            .offset(x: patch.rect.minX * fit, y: patch.rect.minY * fit)
+                    }
                     if let mark = model.selectedMark, model.cropRect == nil {
                         MarkOutline(mark: mark, fit: fit)
                     }

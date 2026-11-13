@@ -77,39 +77,6 @@ final class WindowHighlight {
         return CGPath(roundedRect: frame, cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
     }
 
-    func drawDim(in context: CGContext, bounds: CGRect, color: NSColor) {
-        context.saveGState()
-        context.setFillColor(color.cgColor)
-        context.addRect(bounds)
-        if let hole = holePath { context.addPath(hole) }
-        context.fillPath(using: .evenOdd)
-        if let hole = holePath, alpha < 1 {
-            context.setFillColor(color.withAlphaComponent(color.alphaComponent * (1 - alpha)).cgColor)
-            context.addPath(hole)
-            context.fillPath()
-        }
-        context.restoreGState()
-    }
-
-    func drawRing(in context: CGContext) {
-        guard let frame, alpha > 0 else { return }
-        let radius = Self.cornerRadius
-        context.saveGState()
-        let ring = CGPath(roundedRect: frame.insetBy(dx: -1, dy: -1), cornerWidth: radius + 1, cornerHeight: radius + 1, transform: nil)
-        context.setShadow(offset: .zero, blur: 28, color: Self.purple.withAlphaComponent(0.55 * alpha).cgColor)
-        context.setStrokeColor(Self.purple.withAlphaComponent(alpha).cgColor)
-        context.setLineWidth(2)
-        context.addPath(ring)
-        context.strokePath()
-        context.setShadow(offset: .zero, blur: 0, color: nil)
-        let halo = CGPath(roundedRect: frame.insetBy(dx: -3.5, dy: -3.5), cornerWidth: radius + 3.5, cornerHeight: radius + 3.5, transform: nil)
-        context.setStrokeColor(Self.purple.withAlphaComponent(0.28 * alpha).cgColor)
-        context.setLineWidth(3)
-        context.addPath(halo)
-        context.strokePath()
-        context.restoreGState()
-    }
-
     func drawLabel(in bounds: CGRect, scale: CGFloat) {
         guard let frame, let window, alpha > 0 else { return }
         let nameAttributes: [NSAttributedString.Key: Any] = [

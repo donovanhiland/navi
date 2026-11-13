@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import NaviCore
 
 @MainActor
@@ -16,6 +17,7 @@ final class ClipboardWatcher {
     private var lastChangeCount: Int
     private var ownChangeCount: Int?
     private var timer: Timer?
+    private var encodings: [UUID: Task<Void, Never>] = [:]
 
     init(inbox: Inbox, pasteboard: NSPasteboard = .general) {
         self.inbox = inbox
@@ -53,14 +55,37 @@ final class ClipboardWatcher {
         let bundleID = app?.bundleIdentifier
         if let text = pasteboard.string(forType: .string) {
             inbox.add(text: text, sourceApp: sourceApp, sourceBundleID: bundleID)
-        } else if let png = Self.pngData(from: pasteboard) {
+        } else if let png = pasteboard.data(forType: .png) {
             inbox.add(fileData: png, fileExtension: "png", kind: .image, sourceApp: sourceApp, sourceBundleID: bundleID)
+        } else if let tiff = pasteboard.data(forType: .tiff) {
+            addEncoding(tiff, sourceApp: sourceApp, sourceBundleID: bundleID)
         }
     }
 
-    private static func pngData(from pasteboard: NSPasteboard) -> Data? {
-        if let png = pasteboard.data(forType: .png) { return png }
-        guard let tiff = pasteboard.data(forType: .tiff), let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-        return bitmap.representation(using: .png, properties: [:])
+    func waitForIdle() async {
+        while let (_, task) = encodings.first {
+            await task.value
+        }
+    }
+
+    private func addEncoding(_ tiff: Data, sourceApp: String?, sourceBundleID: String?) {
+        let id = UUID()
+        let encoding = Task.detached(priority: .userInitiated) { Self.pngData(fromTIFF: tiff) }
+        let finish = Task { @MainActor [weak self] in
+            let png = await encoding.value
+            guard let self else { return }
+            if let png {
+                inbox.add(fileData: png, fileExtension: "png", kind: .image, sourceApp: sourceApp, sourceBundleID: sourceBundleID)
+            }
+            encodings[id] = nil
+        }
+        encodings[id] = finish
+    }
+
+    private nonisolated static func pngData(fromTIFF tiff: Data) -> Data? {
+        guard let source = CGImageSourceCreateWithData(tiff as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { return NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) }
+        return PNGEncoder.encode(image)
     }
 }

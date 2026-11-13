@@ -58,6 +58,9 @@ final class AnnotateModel {
         didSet { render() }
     }
     private(set) var rendered: CGImage?
+    private(set) var patch: AnnotationRenderer.Patch?
+    @ObservationIgnored private var renderedMarks: [Annotation]?
+    @ObservationIgnored private var renderedBase: CGImage?
 
     private var undoStack = UndoStack<Snapshot>()
     @ObservationIgnored private let renderer = AnnotationRenderer()
@@ -79,6 +82,7 @@ final class AnnotateModel {
         self.placement = placement
         self.scale = max(scale, 1)
         render()
+        renderer.prewarmEffects(for: base)
     }
 
     func pointerMoved(to point: CGPoint?) {
@@ -408,11 +412,30 @@ final class AnnotateModel {
     }
 
     private func render() {
-        var marks = document.annotations
-        if let editing = textEdit?.id { marks.removeAll { $0.id == editing } }
-        if let preview = textPreview { marks.append(preview) }
-        if let draft { marks.append(draft) }
-        rendered = renderer.render(base: base, marks: marks)
+        var all = document.annotations
+        if let editing = textEdit?.id { all.removeAll { $0.id == editing } }
+        var live: [Annotation] = []
+        if let id = dragOrigin?.id, let mark = all.first(where: { $0.id == id }) { live.append(mark) }
+        if let preview = textPreview {
+            all.append(preview)
+            live.append(preview)
+        }
+        if let draft {
+            all.append(draft)
+            live.append(draft)
+        }
+        let single = live.count == 1 && live[0].kind != .spotlight ? live[0] : nil
+        let committed = single.map { mark in all.filter { $0.id != mark.id } } ?? all
+        if committed != renderedMarks || base !== renderedBase || rendered == nil {
+            rendered = committed.isEmpty ? base : renderer.render(base: base, marks: committed)
+            renderedMarks = committed
+            renderedBase = base
+        }
+        if let single, rendered != nil {
+            patch = renderer.patch(base: base, marks: all, live: single)
+        } else if patch != nil {
+            patch = nil
+        }
     }
 }
 

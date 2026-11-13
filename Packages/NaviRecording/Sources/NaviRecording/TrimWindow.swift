@@ -81,10 +81,10 @@ final class TrimWindow: NSObject, NSWindowDelegate {
         finish(false)
     }
 
-    private nonisolated static func export(_ url: URL, from start: Double, to end: Double, outputURL: URL) async throws -> URL {
+    nonisolated static func export(_ url: URL, from start: Double, to end: Double, outputURL: URL) async throws -> URL {
         try? FileManager.default.removeItem(at: outputURL)
         let asset = AVURLAsset(url: url)
-        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
             throw RecordingError.writerFailed("no export session")
         }
         session.timeRange = CMTimeRange(

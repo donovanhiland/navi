@@ -42,67 +42,76 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
     var scenarios: [ScenarioResult] = []
 
     var previous: Inbox?
-    let load = sample(runs, prepare: { settle(&previous) }, run: { _ in
-        let loaded = Inbox(directory: directory, limit: limit)
-        previous = loaded
-        return loaded.items.count
-    })
-    settle(&previous)
-    scenarios.append(ScenarioResult(name: "load", milliseconds: load.milliseconds))
+    if options.wants("load") {
+        let load = sample(runs, prepare: { settle(&previous) }, run: { _ in
+            let loaded = Inbox(directory: directory, limit: limit)
+            previous = loaded
+            return loaded.items.count
+        })
+        settle(&previous)
+        scenarios.append(ScenarioResult(name: "load", milliseconds: load.milliseconds))
+    }
 
     let filler = String(repeating: "the report ", count: 150)
     var added: UUID?
     var counter = 0
-    let add = sample(runs, prepare: {
-        if let id = added {
-            inbox.remove(id)
-            inbox.flush()
-            added = nil
-        }
-    }, run: { _ in
-        counter += 1
-        added = inbox.add(text: "bench add \(counter) " + filler)?.id
-        return 1
-    })
-    if let id = added { inbox.remove(id) }
-    inbox.flush()
-    scenarios.append(ScenarioResult(name: "add", milliseconds: add.milliseconds))
-
-    let saveFlush = sample(runs, prepare: {
-        if let id = added {
-            inbox.remove(id)
-            inbox.flush()
-            added = nil
-        }
-    }, run: { _ in
-        counter += 1
-        added = inbox.add(text: "bench add \(counter) " + filler)?.id
+    if options.wants("add") {
+        let add = sample(runs, prepare: {
+            if let id = added {
+                inbox.remove(id)
+                inbox.flush()
+                added = nil
+            }
+        }, run: { _ in
+            counter += 1
+            added = inbox.add(text: "bench add \(counter) " + filler)?.id
+            return 1
+        })
+        if let id = added { inbox.remove(id) }
         inbox.flush()
-        return 1
-    })
-    if let id = added { inbox.remove(id) }
-    inbox.flush()
-    scenarios.append(ScenarioResult(name: "save-flush", milliseconds: saveFlush.milliseconds))
+        scenarios.append(ScenarioResult(name: "add", milliseconds: add.milliseconds))
+    }
 
-    var addedLarge: UUID?
-    var largeCounter = 0
-    let addLarge = sample(runs, prepare: {
-        if let id = addedLarge {
-            inbox.remove(id)
+    if options.wants("save-flush") {
+        let saveFlush = sample(runs, prepare: {
+            if let id = added {
+                inbox.remove(id)
+                inbox.flush()
+                added = nil
+            }
+        }, run: { _ in
+            counter += 1
+            added = inbox.add(text: "bench add \(counter) " + filler)?.id
             inbox.flush()
-            addedLarge = nil
-        }
-    }, run: { _ in
-        largeCounter += 1
-        addedLarge = inbox.add(text: "bench large \(largeCounter) " + hugeText)?.id
-        return 1
-    })
-    if let id = addedLarge { inbox.remove(id) }
-    inbox.flush()
-    scenarios.append(ScenarioResult(name: "add-large-mixed", milliseconds: addLarge.milliseconds))
+            return 1
+        })
+        if let id = added { inbox.remove(id) }
+        inbox.flush()
+        scenarios.append(ScenarioResult(name: "save-flush", milliseconds: saveFlush.milliseconds))
+    }
+
+    if options.wants("add-large-mixed") {
+        var addedLarge: UUID?
+        var largeCounter = 0
+        let addLarge = sample(runs, prepare: { () -> String in
+            if let id = addedLarge {
+                inbox.remove(id)
+                inbox.flush()
+                addedLarge = nil
+            }
+            largeCounter += 1
+            return "bench large \(largeCounter) " + hugeText
+        }, run: { text in
+            addedLarge = inbox.add(text: text)?.id
+            return 1
+        })
+        if let id = addedLarge { inbox.remove(id) }
+        inbox.flush()
+        scenarios.append(ScenarioResult(name: "add-large-mixed", milliseconds: addLarge.milliseconds))
+    }
 
     let queries = SearchQueries(options.corpus)
-    for (name, query) in queries.warm {
+    for (name, query) in queries.warm where options.wants(name) {
         let result = sample(runs, prepare: { () }, run: { _ in inbox.search(query).count })
         scenarios.append(ScenarioResult(name: name, milliseconds: result.milliseconds, matches: result.count))
     }
@@ -122,24 +131,37 @@ private func benchmarkSize(_ count: Int, options: BenchOptions) throws -> SizeRe
         settle(&last)
         return ScenarioResult(name: name, milliseconds: cold.milliseconds, matches: cold.count, deferred: deferred)
     }
-    for (name, query) in queries.cold { scenarios.append(coldSearch(name, query, in: directory)) }
-    scenarios.append(coldSearch("search-cold-huge", "привет", in: hugeDirectory))
-    let warmup = sample(runs, prepare: { Inbox(directory: directory, limit: limit) }, run: { fresh in
-        while !fresh.isSearchReady { RunLoop.main.run(mode: .default, before: .now + 0.0005) }
-        return 1
-    })
-    scenarios.append(ScenarioResult(name: "search-warmup", milliseconds: warmup.milliseconds))
+    for (name, query) in queries.cold where options.wants(name) { scenarios.append(coldSearch(name, query, in: directory)) }
+    if options.wants("search-cold-huge") {
+        scenarios.append(coldSearch("search-cold-huge", "привет", in: hugeDirectory))
+    }
+    if options.wants("search-warmup") {
+        let warmup = sample(runs, prepare: { Inbox(directory: directory, limit: limit) }, run: { fresh in
+            while !fresh.isSearchReady { RunLoop.main.run(mode: .default, before: .now + 0.0005) }
+            return 1
+        })
+        scenarios.append(ScenarioResult(name: "search-warmup", milliseconds: warmup.milliseconds))
+    }
 
     let model = ClipboardModel(inbox: inbox)
-    let results = sample(runs, prepare: { () }, run: { _ in
-        model.query = ""
-        _ = model.results
-        model.query = queries.results
-        return model.results.count
-    })
-    scenarios.append(ScenarioResult(name: "results", milliseconds: results.milliseconds, matches: results.count))
-    let repeated = sample(runs, prepare: { () }, run: { _ in model.results.count })
-    scenarios.append(ScenarioResult(name: "results-repeat", milliseconds: repeated.milliseconds, matches: repeated.count))
+    if options.wants("results") {
+        let results = sample(runs, prepare: { () }, run: { _ in
+            model.query = ""
+            _ = model.results
+            model.query = queries.results
+            return model.results.count
+        })
+        scenarios.append(ScenarioResult(name: "results", milliseconds: results.milliseconds, matches: results.count))
+    }
+    if options.wants("results-repeat") {
+        let repeated = sample(runs, prepare: { () }, run: { _ in model.results.count })
+        scenarios.append(ScenarioResult(name: "results-repeat", milliseconds: repeated.milliseconds, matches: repeated.count))
+    }
+
+    scenarios += extraScenarios(
+        inbox: inbox, options: options, runs: runs,
+        sample: { count, prepare, run in sample(count, prepare: prepare, run: { _ in run() }).milliseconds }
+    )
 
     return SizeResult(items: count, historyKB: Double(bytes) / 1024, scenarios: scenarios)
 }

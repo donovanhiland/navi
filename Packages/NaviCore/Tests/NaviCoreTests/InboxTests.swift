@@ -269,3 +269,92 @@ private final class Probe: @unchecked Sendable {
         ))
     }
 }
+
+@MainActor
+struct InboxFastPathTests {
+    let directory = FileManager.default.temporaryDirectory.appending(path: "NaviTests-\(UUID().uuidString)")
+    let start = Date(timeIntervalSince1970: 1_000_000)
+
+    private func sha(_ text: String) -> String {
+        Inbox.hashForTesting(text)
+    }
+
+    @Test func largeTextGetsItsHashAfterTheBackgroundHashLands() async throws {
+        let inbox = Inbox(directory: directory)
+        let big = String(repeating: "Привет мир ", count: 30_000)
+        #expect(big.utf8.count > Inbox.deferredHashLimit)
+        let item = try #require(inbox.add(text: big, now: start))
+        #expect(item.contentHash.isEmpty)
+        while inbox.items[0].contentHash.isEmpty { try await Task.sleep(for: .milliseconds(2)) }
+        #expect(inbox.items[0].contentHash == sha(big))
+        inbox.flush()
+        let reloaded = Inbox(directory: directory)
+        #expect(reloaded.items[0].contentHash == sha(big))
+    }
+
+    @Test func flushResolvesAHashThatIsStillPending() throws {
+        let inbox = Inbox(directory: directory)
+        let big = String(repeating: "abc ", count: 100_000)
+        _ = try #require(inbox.add(text: big, now: start))
+        inbox.flush()
+        let reloaded = Inbox(directory: directory)
+        #expect(reloaded.items[0].contentHash == sha(big))
+    }
+
+    @Test func largeTextCopiedAgainMovesToTheTopWithoutADuplicate() throws {
+        let inbox = Inbox(directory: directory)
+        let big = String(repeating: "abc ", count: 100_000)
+        let first = try #require(inbox.add(text: big, now: start))
+        inbox.add(text: "small", now: start + 1)
+        let again = try #require(inbox.add(text: big, now: start + 2))
+        #expect(again.id == first.id)
+        #expect(inbox.items.map(\.text?.count) == [big.count, 5])
+        #expect(inbox.items[0].copyCount == 2)
+        inbox.add(text: big + "x", now: start + 3)
+        #expect(inbox.items.count == 3)
+    }
+
+    @Test func movingItemsMatchesAFullStableSort() throws {
+        var generator = SystemRandomNumberGenerator()
+        let inbox = Inbox(directory: directory, limit: 1000)
+        var ids: [UUID] = []
+        for index in 0..<60 {
+            ids.append(try #require(inbox.add(text: "item \(index)", now: start + Double(index % 7))?.id))
+        }
+        for round in 0..<400 {
+            let id = ids.randomElement(using: &generator)!
+            switch round % 3 {
+            case 0: inbox.touch(id, now: start + Double(Int.random(in: 0..<12, using: &generator)))
+            case 1: inbox.togglePin(id)
+            default: inbox.add(text: "item \(ids.firstIndex(of: id)!)", now: start + Double(Int.random(in: 0..<12, using: &generator)))
+            }
+            let expected = inbox.items.enumerated().sorted { lhs, rhs in
+                if lhs.element.pinned != rhs.element.pinned { return lhs.element.pinned }
+                return lhs.element.lastUsedAt > rhs.element.lastUsedAt
+            }.map(\.element.id)
+            #expect(inbox.items.map(\.id) == expected, "round \(round)")
+        }
+    }
+
+    @Test func asciiFoldMatchesTheSystemFold() {
+        let all = String(decoding: (0..<128).map { UInt8($0) }, as: UTF8.self)
+        let samples = [all, "The QUICK brown Fox 0123 JUMPS ~!@#", "", "Z", "aZ[`{@"]
+        for sample in samples {
+            #expect(String(decoding: SearchCache.fold(sample), as: UTF8.self) == SearchCache.foldedWithFoundation(string: sample))
+        }
+    }
+
+    @Test func searchKernelAgreesWithMemmem() {
+        var generator = SystemRandomNumberGenerator()
+        let alphabet = Array("abcab ")
+        for _ in 0..<2000 {
+            let hay = (0..<Int.random(in: 0..<80, using: &generator)).map { _ in UInt8(ascii: Unicode.Scalar(String(alphabet.randomElement(using: &generator)!))!) }
+            let needle = (0..<Int.random(in: 1..<6, using: &generator)).map { _ in UInt8(ascii: Unicode.Scalar(String(alphabet.randomElement(using: &generator)!))!) }
+            let expected = hay.withUnsafeBytes { h in needle.withUnsafeBytes { n in memmem(h.baseAddress, h.count, n.baseAddress, n.count) != nil } }
+            let found = hay.withUnsafeBufferPointer { h in needle.withUnsafeBufferPointer { n in
+                SearchKernel.contains(h.baseAddress ?? UnsafePointer(bitPattern: 1)!, h.count, n.baseAddress!, n.count)
+            } }
+            #expect(found == expected)
+        }
+    }
+}

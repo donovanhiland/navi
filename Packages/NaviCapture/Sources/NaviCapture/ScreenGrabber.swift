@@ -26,23 +26,148 @@ enum CaptureError: Error {
 enum ScreenGrabber {
     static let finderBundleID = "com.apple.finder"
 
-    static func captureAllScreens(hideDesktopIcons: Bool) async throws -> [(NSScreen, CapturedImage)] {
+    private static var displays: [SCDisplay] = []
+    private static var ownApp: SCRunningApplication?
+    private static var observesScreens = false
+
+    static func prewarm() {
+        Task {
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
+            remember(content)
+            if let own = try? await SCShareableContent.currentProcess { rememberOwnApp(own) }
+            guard let display = content.displays.first else { return }
+            let config = SCStreamConfiguration()
+            config.width = 16
+            config.height = 16
+            config.showsCursor = false
+            _ = try? await SCScreenshotManager.captureImage(
+                contentFilter: SCContentFilter(display: display, excludingWindows: []), configuration: config
+            )
+        }
+    }
+
+    private static func remember(_ content: SCShareableContent) {
+        displays = content.displays
+        let pid = ProcessInfo.processInfo.processIdentifier
+        ownApp = content.applications.first { $0.processID == pid } ?? ownApp
+        watchScreens()
+    }
+
+    private static func rememberOwnApp(_ content: SCShareableContent) {
+        let pid = ProcessInfo.processInfo.processIdentifier
+        ownApp = content.applications.first { $0.processID == pid } ?? ownApp
+    }
+
+    private struct ImageBox: @unchecked Sendable {
+        let image: CGImage?
+    }
+
+    @MainActor
+    private final class FreezeCollector {
+        let screens: [NSScreen]
+        var images: [CapturedImage?]
+        var remaining: Int
+        var failed = false
+        let completion: ([(NSScreen, CapturedImage)]?) -> Void
+
+        init(screens: [NSScreen], completion: @escaping ([(NSScreen, CapturedImage)]?) -> Void) {
+            self.screens = screens
+            images = Array(repeating: nil, count: screens.count)
+            remaining = screens.count
+            self.completion = completion
+        }
+
+        func receive(_ index: Int, _ image: CGImage?) {
+            if let image {
+                images[index] = CapturedImage(image: image, scale: screens[index].backingScaleFactor)
+            } else {
+                failed = true
+            }
+            remaining -= 1
+            guard remaining == 0 else { return }
+            let pairs = zip(screens, images).compactMap { screen, image in image.map { (screen, $0) } }
+            completion(failed || pairs.count != screens.count ? nil : pairs)
+        }
+    }
+
+    static func startFreeze(
+        hideDesktopIcons: Bool, completion: @escaping ([(NSScreen, CapturedImage)]?) -> Void
+    ) -> Bool {
+        guard !hideDesktopIcons, let ownApp, !displays.isEmpty,
+              !NSApp.windows.contains(where: { $0.isVisible && $0.level == .normal })
+        else { return false }
+        let screens = NSScreen.screens
+        var requests: [(SCContentFilter, SCStreamConfiguration)] = []
+        for screen in screens {
+            guard let id = screen.displayID, let display = displays.first(where: { $0.displayID == id }) else { return false }
+            let config = SCStreamConfiguration()
+            config.width = Int(screen.frame.width * screen.backingScaleFactor)
+            config.height = Int(screen.frame.height * screen.backingScaleFactor)
+            config.captureResolution = .best
+            config.showsCursor = false
+            requests.append((SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: []), config))
+        }
+        let collector = FreezeCollector(screens: screens, completion: completion)
+        for (index, request) in requests.enumerated() {
+            SCScreenshotManager.captureImage(contentFilter: request.0, configuration: request.1) { image, _ in
+                let box = ImageBox(image: image)
+                Task { @MainActor in collector.receive(index, box.image) }
+            }
+        }
+        return true
+    }
+
+    private static func watchScreens() {
+        guard !observesScreens else { return }
+        observesScreens = true
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { _ in
+            MainActor.assumeIsolated { displays = [] }
+        }
+    }
+
+    private struct Source {
+        let displays: [SCDisplay]
+        let excluded: [SCWindow]
+        let hideDesktopIcons: Bool
+    }
+
+    private static func source(hideDesktopIcons: Bool) async throws -> Source {
+        let ownBundleID = Bundle.main.bundleIdentifier
+        if !hideDesktopIcons, !displays.isEmpty, let own = try? await SCShareableContent.currentProcess {
+            rememberOwnApp(own)
+            return Source(displays: displays, excluded: own.windows.filter { $0.windowLayer != 0 }, hideDesktopIcons: false)
+        }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        remember(content)
+        let excluded = content.windows.filter { window in
+            let bundleID = window.owningApplication?.bundleIdentifier
+            if bundleID == ownBundleID { return window.windowLayer != 0 }
+            return hideDesktopIcons && bundleID == finderBundleID && window.windowLayer < 0
+        }
+        return Source(displays: content.displays, excluded: excluded, hideDesktopIcons: hideDesktopIcons)
+    }
+
+    static func captureAllScreens(hideDesktopIcons: Bool) async throws -> [(NSScreen, CapturedImage)] {
+        let source = try await source(hideDesktopIcons: hideDesktopIcons)
+        let screens = NSScreen.screens
+        let tasks = screens.map { screen in
+            Task { try await capture(screen, source: source) }
+        }
         var result: [(NSScreen, CapturedImage)] = []
-        for screen in NSScreen.screens {
-            result.append((screen, try await capture(screen, content: content, hideDesktopIcons: hideDesktopIcons)))
+        for (screen, task) in zip(screens, tasks) {
+            result.append((screen, try await task.value))
         }
         return result
     }
 
     static func capture(_ screen: NSScreen, hideDesktopIcons: Bool) async throws -> CapturedImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        return try await capture(screen, content: content, hideDesktopIcons: hideDesktopIcons)
+        try await capture(screen, source: source(hideDesktopIcons: hideDesktopIcons))
     }
 
     static func capture(_ screen: NSScreen, rect: CGRect, hideDesktopIcons: Bool) async throws -> CapturedImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        return try await capture(screen, content: content, hideDesktopIcons: hideDesktopIcons, sourceRect: rect)
+        try await capture(screen, source: source(hideDesktopIcons: hideDesktopIcons), sourceRect: rect)
     }
 
     static func captureWindow(id: CGWindowID) async throws -> CapturedImage {
@@ -63,9 +188,12 @@ enum ScreenGrabber {
     }
 
     static func onScreenWindows() -> [OnScreenWindow] {
+        onScreenWindows(primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
+    }
+
+    nonisolated static func onScreenWindows(primaryHeight: CGFloat) -> [OnScreenWindow] {
         let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return [] }
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         return list.compactMap { info in
             guard (info[kCGWindowLayer as String] as? Int) == 0,
                   (info[kCGWindowAlpha as String] as? Double ?? 1) > 0,
@@ -83,19 +211,23 @@ enum ScreenGrabber {
         }
     }
 
+    private static func capture(_ screen: NSScreen, source: Source, sourceRect: CGRect? = nil) async throws -> CapturedImage {
+        do {
+            return try await capture(screen, displays: source.displays, excluded: source.excluded, sourceRect: sourceRect)
+        } catch CaptureError.noDisplay {
+            displays = []
+            let fresh = try await self.source(hideDesktopIcons: source.hideDesktopIcons)
+            return try await capture(screen, displays: fresh.displays, excluded: fresh.excluded, sourceRect: sourceRect)
+        }
+    }
+
     private static func capture(
-        _ screen: NSScreen, content: SCShareableContent, hideDesktopIcons: Bool, sourceRect: CGRect? = nil
+        _ screen: NSScreen, displays: [SCDisplay], excluded: [SCWindow], sourceRect: CGRect?
     ) async throws -> CapturedImage {
         guard let displayID = screen.displayID,
-              let display = content.displays.first(where: { $0.displayID == displayID })
+              let display = displays.first(where: { $0.displayID == displayID })
         else { throw CaptureError.noDisplay }
 
-        let ownBundleID = Bundle.main.bundleIdentifier
-        let excluded = content.windows.filter { window in
-            let bundleID = window.owningApplication?.bundleIdentifier
-            if bundleID == ownBundleID { return window.windowLayer != 0 }
-            return hideDesktopIcons && bundleID == finderBundleID && window.windowLayer < 0
-        }
         let filter = SCContentFilter(display: display, excludingWindows: excluded)
         let scale = screen.backingScaleFactor
         let config = SCStreamConfiguration()

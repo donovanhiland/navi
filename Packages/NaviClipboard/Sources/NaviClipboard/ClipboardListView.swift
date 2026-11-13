@@ -12,7 +12,7 @@ struct ClipboardListView: View {
         VStack(spacing: 0) {
             header
             list(results)
-                .frame(height: model.listHeight(for: results))
+                .frame(height: model.listHeight)
             footer
         }
         .frame(width: Metrics.width, height: model.contentHeight, alignment: .top)

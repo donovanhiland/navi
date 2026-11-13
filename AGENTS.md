@@ -46,11 +46,16 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   picture of the shot to drag into any app (top right, beside Cancel and Done), Done updates the card and the history item. Marks stay editable in
   `<id>.navi` (JSON + base PNG) beside the Inbox file.
 - Step 3 (`Extras/`): pin to screen (move, scroll to resize, opacity, lock so
-  clicks go through, unlock from the menu), Capture Text (OCR + QR, Vision),
+  clicks go through, unlock from the menu), Capture Text (OCR + QR, Vision;
+  macOS builds the text model once per macOS build, about 40 s, so Navi runs
+  one warm-up read in the background 20 s after launch when the build is new),
   self-timer, all-in-one bar on `⇧⌘5`, card quick actions (right-click).
 - Step 4: scrolling capture (`Scroll/`, Vision registration, vertical and
-  horizontal, Auto-scroll), background tool (`Background/`: gradients, solid,
-  picture, padding, corners, shadow, aspect ratio, auto balance, presets).
+  horizontal, Auto-scroll; a frame every 40 ms plus capture time, and only
+  frames that moved a quarter frame or more are kept), background tool
+  (`Background/`: gradients, solid, picture, padding, corners, shadow, aspect
+  ratio, auto balance, presets; the soft fill and shadow are drawn at a quarter
+  size and scaled up, and the preview renders at 1600 px at most).
 
 **Talk to type and step 5 are built, not checked by Donovan yet:**
 - `Packages/NaviDictation`: hold fn to talk, double-tap fn to lock, pill with
@@ -151,12 +156,26 @@ video editor.
   but keep Navi's normal windows, such as the markup editor.
 - The selection overlay is a non-activating panel: it takes Esc, Space, and the
   mouse without activating Navi, so an open markup editor is not raised.
-- The selection overlay shows at once over the live screen. The frozen screen
-  images arrive about 0.2 s later and are what gets cropped; a selection that
-  ends first waits for them, off screen. The overlay leaves the screen on mouse
-  up. The frozen image is the overlay's layer content (GPU), and the hint pill
-  shows at once at the mouse. PNG encoding runs off the main thread; the card
-  draws a small thumbnail. The time logs under `Capture` ("Capture to card").
+- The screen freeze starts before the selection overlay is built. When Navi
+  has no normal window open and Hide Desktop Icons is off, it captures each
+  display with a filter that leaves out the whole Navi app (cached displays
+  and app from launch); otherwise it fetches `SCShareableContent` first. The
+  overlay waits for the frozen images, at most 0.1 s, so the dim, frozen
+  screen, and magnifier show together with no fade in. The frozen images are
+  what gets cropped; a selection that ends first waits for them, off screen.
+  The window list for the highlight is read off the main thread. Nothing else
+  is built when a shot starts: the spare card panel and the editor window are
+  made when Navi is idle (2.5 s after launch, 1 s after each shot).
+  The dim and the window ring are GPU layers (`DimView`); the overlay view
+  redraws only the rects that changed. On mouse up the shot is handed off
+  first, then the overlay leaves the screen. PNG encoding (`PNGEncoder`) runs
+  off the main thread; the card shows, then the clipboard copy is written.
+  Step times log under `Timing` (`docs/performance.md`).
+- Edit after capture uses an editor window built ahead of time
+  (`InPlaceAnnotator.Stage`), activates Navi once the drag starts, and orders
+  the editor in before the selection overlay leaves, so no frame shows the
+  plain screen. While a mark is drawn or moved, the editor redraws only a
+  patch around it (`AnnotationRenderer.patch`).
 - Area selection is pixel exact: the pixels under both corners of the drag (the
   pixel the magnifier centers on) are in the shot, and the outline shows the
   exact crop. A corner snaps (6 pt) only to a window edge you can see near the
@@ -270,7 +289,7 @@ Xnapper's backgrounds, and macshot's auto-redact.
 | `docs/capture-plan.html` | Prototype, feature map, and plan |
 | `docs/upstream-hex.md` | Hex as the upstream for talk to type: feature map, sync steps |
 | `Packages/NaviDictation/Bench` | Dictation benchmark cases and saved results |
-| `docs/performance.md` | History performance: what `history-bench` times, how search and saves work, numbers |
+| `docs/performance.md` | Speed goal and numbers for every area; capture, recording, and history benchmarks |
 | `Packages/NaviClipboard/Bench` | Saved `history-bench` results |
 
 `Inbox` keeps items in `~/Library/Application Support/Navi/` (`history.json`

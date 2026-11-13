@@ -19,13 +19,13 @@ enum GIFExporter {
         let builder = PieceBuilder(delay: plan.frameDelay, size: framesPerPiece)
 
         if transform.isIdentity {
-            try await Task.detached(priority: .userInitiated) {
+            try await BlockingWork.run {
                 try readFrames(asset: asset, track: track, plan: plan, into: builder)
-            }.value
+            }
         } else {
             try await generateFrames(asset: asset, plan: plan, into: builder)
         }
-        let pieces = await Task.detached(priority: .userInitiated) { builder.finish() }.value
+        let pieces = await BlockingWork.run { builder.finish() }
         guard !pieces.isEmpty, let gif = GIFSplicer.join(pieces) else {
             throw RecordingError.gifFailed("no frames could be read")
         }

@@ -1,3 +1,4 @@
+import Accelerate
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -13,18 +14,39 @@ enum BackgroundRenderer {
             data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        let full = CGRect(origin: .zero, size: size)
-        drawFill(style.fill, in: full, context: context)
-
         let rect = CGRect(
             x: ((size.width - contentSize.width) / 2).rounded(), y: ((size.height - contentSize.height) / 2).rounded(),
             width: contentSize.width, height: contentSize.height
         )
         let radius = CGFloat(style.cornerRadius) * scale
         let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let full = CGRect(origin: .zero, size: size)
+        let softFill: Bool
+        switch style.fill {
+        case .gradient, .solid, .none: softFill = true
+        case .image: softFill = false
+        }
+        if !softFill { drawFill(style.fill, in: full, context: context) }
+        if softFill || style.shadow {
+            let layer = SoftLayer(size: size)
+            if softFill { layer.draw { drawFill(style.fill, in: CGRect(origin: .zero, size: size), context: $0) } }
+            if style.shadow {
+                layer.draw { small in
+                    let away = size.width * 2
+                    small.setShadow(
+                        offset: CGSize(width: -away / SoftLayer.factor, height: -10 * scale / SoftLayer.factor),
+                        blur: 40 * scale / SoftLayer.factor, color: CGColor(gray: 0, alpha: 0.45)
+                    )
+                    small.translateBy(x: away, y: 0)
+                    small.addPath(path)
+                    small.setFillColor(CGColor(gray: 0, alpha: 1))
+                    small.fillPath()
+                }
+            }
+            layer.composite(into: context, replacing: softFill)
+        }
         if style.shadow {
             context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: -10 * scale), blur: 40 * scale, color: CGColor(gray: 0, alpha: 0.45))
             context.addPath(path)
             context.setFillColor(CGColor(gray: 0, alpha: 1))
             context.fillPath()
@@ -36,6 +58,68 @@ enum BackgroundRenderer {
         context.draw(content, in: rect)
         context.restoreGState()
         return context.makeImage()
+    }
+
+    static func scaled(_ image: CGImage, by factor: CGFloat) -> CGImage? {
+        let width = max(1, Int((CGFloat(image.width) * factor).rounded())), height = max(1, Int((CGFloat(image.height) * factor).rounded()))
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
+    }
+
+    private final class SoftLayer {
+        static let factor: CGFloat = 4
+        let size: CGSize
+        let context: CGContext?
+
+        init(size: CGSize) {
+            self.size = size
+            context = CGContext(
+                data: nil, width: max(1, Int((size.width / Self.factor).rounded(.up))),
+                height: max(1, Int((size.height / Self.factor).rounded(.up))), bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        }
+
+        func draw(_ body: (CGContext) -> Void) {
+            guard let context else { return }
+            context.saveGState()
+            context.scaleBy(x: 1 / Self.factor, y: 1 / Self.factor)
+            body(context)
+            context.restoreGState()
+        }
+
+        func composite(into target: CGContext, replacing: Bool) {
+            guard let context, let small = context.data else { return }
+            var source = vImage_Buffer(
+                data: small, height: vImagePixelCount(context.height), width: vImagePixelCount(context.width),
+                rowBytes: context.bytesPerRow
+            )
+            if replacing, let data = target.data, target.bitsPerPixel == 32 {
+                var destination = vImage_Buffer(
+                    data: data, height: vImagePixelCount(target.height), width: vImagePixelCount(target.width),
+                    rowBytes: target.bytesPerRow
+                )
+                vImageScale_ARGB8888(&source, &destination, nil, vImage_Flags(kvImageNoFlags))
+                return
+            }
+            guard var destination = try? vImage_Buffer(
+                width: target.width, height: target.height, bitsPerPixel: 32
+            ) else { return }
+            defer { destination.free() }
+            vImageScale_ARGB8888(&source, &destination, nil, vImage_Flags(kvImageNoFlags))
+            guard var format = vImage_CGImageFormat(
+                bitsPerComponent: 8, bitsPerPixel: 32, colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
+                bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+            ), let image = vImageCreateCGImageFromBuffer(
+                &destination, &format, nil, nil, vImage_Flags(kvImageNoFlags), nil
+            )?.takeRetainedValue() else { return }
+            target.draw(image, in: CGRect(origin: .zero, size: size))
+        }
     }
 
     private static func drawFill(_ fill: BackgroundStyle.Fill, in rect: CGRect, context: CGContext) {
@@ -122,12 +206,28 @@ private struct BackgroundView: View {
     let image: CGImage
     let scale: CGFloat
     let finish: (CGImage?) -> Void
+    private let previewImage: CGImage
+    private let previewScale: CGFloat
+
+    init(image: CGImage, scale: CGFloat, finish: @escaping (CGImage?) -> Void) {
+        self.image = image
+        self.scale = scale
+        self.finish = finish
+        let factor = min(1, 1600 / CGFloat(max(image.width, image.height)))
+        if factor < 1, let small = BackgroundRenderer.scaled(image, by: factor) {
+            previewImage = small
+            previewScale = scale * CGFloat(small.width) / CGFloat(image.width)
+        } else {
+            previewImage = image
+            previewScale = scale
+        }
+    }
 
     @State private var style = BackgroundPresets.last
     @State private var presets = BackgroundPresets.all
     @State private var presetName = ""
 
-    private var rendered: CGImage? { BackgroundRenderer.render(image, style: style, scale: scale) }
+    private var rendered: CGImage? { BackgroundRenderer.render(previewImage, style: style, scale: previewScale) }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -214,7 +314,7 @@ private struct BackgroundView: View {
                     Spacer()
                     Button("Apply") {
                         BackgroundPresets.last = style
-                        finish(rendered)
+                        finish(BackgroundRenderer.render(image, style: style, scale: scale))
                     }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)

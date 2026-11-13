@@ -126,8 +126,15 @@ final class CardStack {
     var actions: CardActions?
     var autoCloseSeconds: () -> Double = { 0 }
 
+    private var sparePanel: CardPanel?
+
+    func prepare() {
+        if sparePanel == nil { sparePanel = CardPanel(size: Self.cardSize) }
+    }
+
     func show(_ card: Card, on screen: NSScreen?) {
-        let panel = CardPanel(size: Self.cardSize)
+        let panel = sparePanel ?? CardPanel(size: Self.cardSize)
+        sparePanel = nil
         let view = CornerCardView(card: card, actions: actions) { [weak self] isHovering in
             self?.hoverChanged(card, isHovering)
         }

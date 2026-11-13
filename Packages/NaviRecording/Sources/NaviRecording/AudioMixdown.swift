@@ -11,9 +11,9 @@ enum AudioMixdown {
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             guard audioTracks.count > 1, let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { return }
             let videoFormat = try await videoTrack.load(.formatDescriptions).first
-            try await Task.detached(priority: .userInitiated) {
+            try await BlockingWork.run {
                 try copy(asset: asset, video: videoTrack, videoFormat: videoFormat, audio: audioTracks, to: temp)
-            }.value
+            }
             _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
         } catch {
             logger.error("Audio mixdown failed, keeping two tracks: \(error.localizedDescription)")
@@ -54,34 +54,44 @@ enum AudioMixdown {
         guard writer.startWriting() else { throw writer.error ?? RecordingError.writerFailed("writer did not start") }
         writer.startSession(atSourceTime: .zero)
 
-        var pendingVideo = videoOut.copyNextSampleBuffer()
-        var pendingAudio = audioOut.copyNextSampleBuffer()
-        while pendingVideo != nil || pendingAudio != nil {
-            let useVideo: Bool
-            if let v = pendingVideo, let a = pendingAudio {
-                useVideo = v.presentationTimeStamp <= a.presentationTimeStamp
-            } else {
-                useVideo = pendingVideo != nil
-            }
-            let input = useVideo ? videoIn : audioIn
-            while !input.isReadyForMoreMediaData {
-                if writer.status == .failed { throw writer.error ?? RecordingError.writerFailed("writer failed") }
-                Thread.sleep(forTimeInterval: 0.002)
-            }
-            if useVideo, let sample = pendingVideo {
-                input.append(sample)
-                pendingVideo = videoOut.copyNextSampleBuffer()
-            } else if let sample = pendingAudio {
-                input.append(sample)
-                pendingAudio = audioOut.copyNextSampleBuffer()
-            }
-        }
-        videoIn.markAsFinished()
-        audioIn.markAsFinished()
+        let group = DispatchGroup()
+        let queue = DispatchQueue(label: "co.navi.recording.mixdown", qos: .userInitiated)
+        pump(videoOut, into: videoIn, on: queue, group: group)
+        pump(audioOut, into: audioIn, on: queue, group: group)
+        group.wait()
+        if reader.status == .failed { writer.cancelWriting(); throw reader.error ?? RecordingError.writerFailed("reader failed") }
 
         let done = DispatchSemaphore(value: 0)
         writer.finishWriting { done.signal() }
         done.wait()
         guard writer.status == .completed else { throw writer.error ?? RecordingError.writerFailed("finish failed") }
+    }
+
+    private static func pump(_ output: AVAssetReaderOutput, into input: AVAssetWriterInput, on queue: DispatchQueue, group: DispatchGroup) {
+        let lane = Lane(output: output, input: input, group: group)
+        group.enter()
+        input.requestMediaDataWhenReady(on: queue) { lane.drain() }
+    }
+
+    private final class Lane: @unchecked Sendable {
+        let output: AVAssetReaderOutput
+        let input: AVAssetWriterInput
+        let group: DispatchGroup
+
+        init(output: AVAssetReaderOutput, input: AVAssetWriterInput, group: DispatchGroup) {
+            self.output = output
+            self.input = input
+            self.group = group
+        }
+
+        func drain() {
+            while input.isReadyForMoreMediaData {
+                guard let sample = output.copyNextSampleBuffer(), input.append(sample) else {
+                    input.markAsFinished()
+                    group.leave()
+                    return
+                }
+            }
+        }
     }
 }

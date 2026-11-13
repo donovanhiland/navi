@@ -55,4 +55,22 @@ struct GIFExporterTests {
         let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
         #expect(gifProperties?[kCGImagePropertyGIFLoopCount] as? Int == 0)
     }
+
+    @Test func longerVideoKeepsEveryFrameAndDelay() async throws {
+        let video = try await makeVideo(seconds: 3, width: 640, height: 400)
+        defer { try? FileManager.default.removeItem(at: video) }
+        let gif = try await GIFExporter.makeGIF(from: video)
+        defer { try? FileManager.default.removeItem(at: gif) }
+
+        let source = try #require(CGImageSourceCreateWithURL(gif as CFURL, nil))
+        #expect(CGImageSourceGetCount(source) == 45)
+        for index in 0..<CGImageSourceGetCount(source) {
+            let image = try #require(CGImageSourceCreateImageAtIndex(source, index, nil))
+            #expect(image.width == 640)
+            #expect(image.height == 400)
+            let frame = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+            let delay = (frame?[kCGImagePropertyGIFDictionary] as? [CFString: Any])?[kCGImagePropertyGIFUnclampedDelayTime] as? Double
+            #expect(abs((delay ?? 0) - 1.0 / 15) < 0.01)
+        }
+    }
 }

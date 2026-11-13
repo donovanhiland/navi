@@ -71,6 +71,10 @@ final class RecordingSink: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+        handle(sampleBuffer, of: type)
+    }
+
+    func handle(_ sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard !finished, sampleBuffer.isValid, writer.status == .writing else { return }
         switch type {
         case .screen: appendVideo(sampleBuffer)

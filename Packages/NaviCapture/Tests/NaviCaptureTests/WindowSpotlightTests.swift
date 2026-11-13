@@ -35,6 +35,7 @@ struct WindowSpotlightTests {
         let session = SelectionSession(screens: [screen], mode: .area, windows: onScreen) { result = $0 }
         let view = OverlayView(session: session, screen: screen)
         view.setFrameSize(Self.size)
+        view.dimView.setFrameSize(Self.size)
         view.captured = CapturedImage(image: Self.desktop(), scale: Self.scale)
         return Rig(session: session, view: view, outcome: { result })
     }
@@ -91,10 +92,19 @@ struct WindowSpotlightTests {
 
         func frame(_ rig: Rig) throws {
             RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.0 / 30.0))
-            let rep = try #require(rig.view.bitmapImageRepForCachingDisplay(in: rig.view.bounds))
-            rig.view.cacheDisplay(in: rig.view.bounds, to: rep)
+            let rep = try #require(NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(Self.size.width * Self.scale), pixelsHigh: Int(Self.size.height * Self.scale),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0
+            ))
+            rep.size = Self.size
             NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+            let graphics = try #require(NSGraphicsContext(bitmapImageRep: rep))
+            NSGraphicsContext.current = graphics
+            graphics.cgContext.setFillColor(.white)
+            graphics.cgContext.fill(CGRect(origin: .zero, size: Self.size))
+            rig.view.dimView.layer?.render(in: graphics.cgContext)
+            rig.view.draw(rig.view.bounds)
             Self.drawCursor(at: mouse)
             NSGraphicsContext.restoreGraphicsState()
             let png = try #require(rep.representation(using: .png, properties: [:]))

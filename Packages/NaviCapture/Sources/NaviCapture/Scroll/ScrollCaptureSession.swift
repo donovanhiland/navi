@@ -28,7 +28,7 @@ final class ScrollCaptureSession {
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.tick()
-                try? await Task.sleep(for: .milliseconds(120))
+                try? await Task.sleep(for: .milliseconds(40))
             }
         }
     }
@@ -37,7 +37,7 @@ final class ScrollCaptureSession {
         guard let captured = try? await ScreenGrabber.capture(screen, rect: rect, hideDesktopIcons: hideDesktopIcons) else { return }
         scale = captured.scale
         let frame = captured.image
-        guard let last = stitcher.frames.last else {
+        guard let last = stitcher.latest else {
             stitcher.append(frame, offset: .zero)
             status.frames = 1
             return
@@ -45,7 +45,7 @@ final class ScrollCaptureSession {
         guard last.width == frame.width, last.height == frame.height else { return }
         let offset = await Task.detached(priority: .userInitiated) { ScrollStitcher.offset(of: frame, from: last) }.value
         guard let offset, stitcher.append(frame, offset: offset) else { return }
-        status.frames = stitcher.frames.count
+        status.frames = stitcher.accepted
         let size = stitcher.stitchedSize
         status.size = "\(Int(size.width)) × \(Int(size.height))"
         if max(size.width, size.height) > Self.maxPixels { finish(keep: true) }

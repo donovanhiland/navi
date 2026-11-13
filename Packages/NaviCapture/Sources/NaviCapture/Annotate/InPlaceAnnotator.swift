@@ -37,9 +37,31 @@ final class InPlaceAnnotator {
         self.onFinish = onFinish
     }
 
-    func show() {
-        let window = InPlaceWindow(screen: screen)
-        let hosting = NSHostingView(rootView: InPlaceAnnotateView(
+    @MainActor
+    final class Stage {
+        fileprivate let window: InPlaceWindow
+        fileprivate let hosting: NSHostingView<InPlaceAnnotateView>
+        let screen: NSScreen
+
+        init(screen: NSScreen) {
+            self.screen = screen
+            window = InPlaceWindow(screen: screen)
+            let blank = CGContext(
+                data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )!.makeImage()!
+            hosting = NSHostingView(rootView: InPlaceAnnotateView(
+                model: AnnotateModel(base: blank, scale: screen.backingScaleFactor), backdrop: nil, area: .zero,
+                onDone: {}, onSave: {}, onStash: {}, onCancel: {}
+            ))
+            hosting.sizingOptions = []
+            window.contentView = hosting
+            hosting.layoutSubtreeIfNeeded()
+        }
+    }
+
+    func show(on stage: Stage? = nil) {
+        let view = InPlaceAnnotateView(
             model: model,
             backdrop: backdrop,
             area: area,
@@ -47,16 +69,27 @@ final class InPlaceAnnotator {
             onSave: { [weak self] in self?.finish(.save) },
             onStash: { [weak self] in self?.finish(.stash) },
             onCancel: { [weak self] in self?.finish(nil) }
-        ))
-        hosting.sizingOptions = []
-        window.contentView = hosting
+        )
+        let window: InPlaceWindow
+        if let stage, stage.screen == screen {
+            window = stage.window
+            stage.hosting.rootView = view
+        } else {
+            window = InPlaceWindow(screen: screen)
+            let hosting = NSHostingView(rootView: view)
+            hosting.sizingOptions = []
+            window.contentView = hosting
+        }
         self.window = window
         watchKeys()
         colorPanelLevel = NSColorPanel.shared.level
         NSColorPanel.shared.level = InPlaceWindow.overlayLevel + 1
         if !NSApp.isActive { registerFallbackKeys() }
-        NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        window.displayIfNeeded()
+        CaptureTiming.mark("shot", "editor ordered front")
+        NSApp.activate()
+        CaptureTiming.markOnScreen("shot", "editor on screen")
         activeObserver = NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -149,7 +182,7 @@ final class InPlaceAnnotator {
     }
 }
 
-private final class InPlaceWindow: NSWindow {
+fileprivate final class InPlaceWindow: NSWindow {
     static let overlayLevel = NSWindow.Level.popUpMenu
 
     init(screen: NSScreen) {

@@ -11,6 +11,7 @@ final class HistoryWriter: Sendable {
     private let directory: URL
     private let queue = DispatchQueue(label: "com.donovanhiland.navi.history-writer", qos: .utility)
     private let state = OSAllocatedUnfairLock(initialState: State())
+    private let encoded = OSAllocatedUnfairLock(initialState: EncodedItems())
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Inbox")
     private static let signposter = OSSignposter(subsystem: "com.donovanhiland.navi", category: "History")
 
@@ -22,12 +23,14 @@ final class HistoryWriter: Sendable {
     }
 
     func write(_ items: [CaptureItem], deleting files: [URL] = []) {
-        let needsDrain = state.withLock { state in
+        let (needsDrain, replaced) = state.withLock { state -> (Bool, [CaptureItem]?) in
+            let replaced = state.pending
             state.pending = items
             state.doomed += files
             defer { state.drainQueued = true }
-            return !state.drainQueued
+            return (!state.drainQueued, replaced)
         }
+        if let replaced { queue.async { withExtendedLifetime(replaced) {} } }
         if needsDrain { queue.async { self.drain() } }
     }
 
@@ -62,7 +65,7 @@ final class HistoryWriter: Sendable {
         defer { Self.signposter.endInterval("InboxSave", interval) }
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(items)
+            let data = encoded.withLock { $0.encode(items) }
             try data.write(to: directory.appending(path: "history.json"), options: .atomic)
             return true
         } catch {

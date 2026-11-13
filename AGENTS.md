@@ -11,7 +11,7 @@ A macOS menu bar app for capture. It combines four tools:
 
 The main idea: every capture (clip, screenshot, recording, GIF, dictated text,
 OCR text) goes to one place. It shows first as a corner card, then in one shared
-history list. `⇧⌘V` opens that list. The user can change it in the Navi menu.
+history list. `⇧⌘V` opens that list. The user can change it in Settings.
 
 ## Plan
 
@@ -46,11 +46,16 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   picture of the shot to drag into any app (top right, beside Cancel and Done), Done updates the card and the history item. Marks stay editable in
   `<id>.navi` (JSON + base PNG) beside the Inbox file.
 - Step 3 (`Extras/`): pin to screen (move, scroll to resize, opacity, lock so
-  clicks go through, unlock from the menu), Capture Text (OCR + QR, Vision),
+  clicks go through, unlock from the menu), Capture Text (OCR + QR, Vision;
+  macOS builds the text model once per macOS build, about 40 s, so Navi runs
+  one warm-up read in the background 20 s after launch when the build is new),
   self-timer, all-in-one bar on `⇧⌘5`, card quick actions (right-click).
 - Step 4: scrolling capture (`Scroll/`, Vision registration, vertical and
-  horizontal, Auto-scroll), background tool (`Background/`: gradients, solid,
-  picture, padding, corners, shadow, aspect ratio, auto balance, presets).
+  horizontal, Auto-scroll; a frame every 40 ms plus capture time, and only
+  frames that moved a quarter frame or more are kept), background tool
+  (`Background/`: gradients, solid, picture, padding, corners, shadow, aspect
+  ratio, auto balance, presets; the soft fill and shadow are drawn at a quarter
+  size and scaled up, and the preview renders at 1600 px at most).
 
 **Talk to type and step 5 are built, not checked by Donovan yet:**
 - `Packages/NaviDictation`: hold fn to talk, double-tap fn to lock, pill with
@@ -65,7 +70,7 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   dictation again. Speed: the pill shows on the
   press. By default (like Wispr Flow) the mic is set up ahead of time but off,
   so there is no mic dot between dictations; a press only starts it. "Keep
-  Microphone Ready" (menu, off by default; Hex's "Keep ready") keeps the mic
+  Microphone Ready" (Settings, off by default; Hex's "Keep ready") keeps the mic
   open with a 450 ms pre-roll, so a press records at once (macOS shows the mic
   dot). The mic is an input-only AUHAL unit on the default input, like Hex
   (cpal). Not `AVAudioEngine`: it joins the mic and the speakers in a hidden
@@ -92,7 +97,7 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   The app wires it to the capture overlay (`CaptureFeature.onRecordRequest`)
   and to video cards (`CaptureFeature.videoTools`, `showRecording`).
 
-Not built: swipe to close a card, a Settings window, the Screen Studio-style
+Not built: swipe to close a card, the Screen Studio-style
 video editor.
 
 ## Decisions
@@ -131,7 +136,7 @@ video editor.
   `activateSettings -u`) and puts them back exactly as they were on quit. A
   backup from an older run keeps its entries; new IDs are added to it. SIGTERM quits the normal way, so
   `pkill` restores them too. No code runs when the app is deleted, so quitting
-  is what gives the keys back. The first launch asks; the menu has a toggle.
+  is what gives the keys back. The first launch asks; Settings has a toggle ("Navi Screenshot Keys").
 - Area mode (`⇧⌘4`, and the `⇧⌘5` bar in Screenshot or Record) spotlights the
   window under the cursor: the rest of the screen dims, the window gets a purple
   ring and glow, and a label shows its app and pixel size. The highlight glides
@@ -151,12 +156,26 @@ video editor.
   but keep Navi's normal windows, such as the markup editor.
 - The selection overlay is a non-activating panel: it takes Esc, Space, and the
   mouse without activating Navi, so an open markup editor is not raised.
-- The selection overlay shows at once over the live screen. The frozen screen
-  images arrive about 0.2 s later and are what gets cropped; a selection that
-  ends first waits for them, off screen. The overlay leaves the screen on mouse
-  up. The frozen image is the overlay's layer content (GPU), and the hint pill
-  shows at once at the mouse. PNG encoding runs off the main thread; the card
-  draws a small thumbnail. The time logs under `Capture` ("Capture to card").
+- The screen freeze starts before the selection overlay is built. When Navi
+  has no normal window open and Hide Desktop Icons is off, it captures each
+  display with a filter that leaves out the whole Navi app (cached displays
+  and app from launch); otherwise it fetches `SCShareableContent` first. The
+  overlay waits for the frozen images, at most 0.1 s, so the dim, frozen
+  screen, and magnifier show together with no fade in. The frozen images are
+  what gets cropped; a selection that ends first waits for them, off screen.
+  The window list for the highlight is read off the main thread. Nothing else
+  is built when a shot starts: the spare card panel and the editor window are
+  made when Navi is idle (2.5 s after launch, 1 s after each shot).
+  The dim and the window ring are GPU layers (`DimView`); the overlay view
+  redraws only the rects that changed. On mouse up the shot is handed off
+  first, then the overlay leaves the screen. PNG encoding (`PNGEncoder`) runs
+  off the main thread; the card shows, then the clipboard copy is written.
+  Step times log under `Timing` (`docs/performance.md`).
+- Edit after capture uses an editor window built ahead of time
+  (`InPlaceAnnotator.Stage`), activates Navi once the drag starts, and orders
+  the editor in before the selection overlay leaves, so no frame shows the
+  plain screen. While a mark is drawn or moved, the editor redraws only a
+  patch around it (`AnnotationRenderer.patch`).
 - Area selection is pixel exact: the pixels under both corners of the drag (the
   pixel the magnifier centers on) are in the shot, and the outline shows the
   exact crop. A corner snaps (6 pt) only to a window edge you can see near the
@@ -175,8 +194,8 @@ video editor.
 - Save puts files in the macOS screenshot folder (`defaults read com.apple.screencapture location`),
   as `Navi 2026-11-06 at 16.10.12.png`, or on the Desktop when that folder is missing.
   Navi's `capture.saveFolder` key overrides both (`CaptureSettings.saveFolder`).
-- Edit after capture (`CaptureSettings.editAfterCapture`, off by default; menu
-  toggle "Edit Screenshots Before Copying"): after an area shot (`⇧⌘4`, or
+- Edit after capture (`CaptureSettings.editAfterCapture`, off by default; Settings
+  toggle "Mark Up Before Copying"): after an area shot (`⇧⌘4`, or
   Capture in the `⇧⌘5` bar, no timer), the frozen screen stays dimmed and the
   area becomes the markup canvas in place (`Annotate/InPlaceAnnotator.swift`),
   with the toolbar floating below it (above it near the bottom, inside it when
@@ -198,8 +217,8 @@ video editor.
   works. The window editor and this one share `AnnotateToolbar`,
   `AnnotateCanvas`, and `AnnotateKeys`.
 - Every screenshot goes to the clipboard as soon as it is taken, and again after
-  markup Done (`CaptureSettings.copyToClipboard`, on by default; menu toggle
-  "Copy Screenshots to Clipboard").
+  markup Done (`CaptureSettings.copyToClipboard`, on by default; Settings
+  toggle "Copy to Clipboard").
 - Each capture is its own history item, even when its pixels match an older
   shot (`Inbox.add(fileData:…, deduplicate: false)`). Saved markup opens only
   while the history file is still that markup's flat image.
@@ -226,6 +245,14 @@ video editor.
   image in that list opens the markup editor (saved marks stay editable); Done
   updates the history item and its open card. `NaviClipboard` reaches capture
   only through `ClipboardFeature.onAnnotate`, wired in the app.
+- The Navi menu holds actions only. Every on/off setting, the History
+  shortcut, Clear History, and the permissions live in the Settings panel
+  (`Settings…`, `⌘,` in the menu; `App/Sources/SettingsPanel.swift` and
+  `SettingsView.swift`). It pops up where the Navi menu was (under the menu
+  bar icon, or at the mouse after `⌥⇧⌘N`) and looks like that menu: section
+  titles, separators, a rounded hover highlight, and its own accent-colored
+  switches (AppKit switches draw grey because Navi is never the active app).
+  A click anywhere on a row flips it. Esc, ⌘W, or a click away closes it.
 - `⌥⇧⌘N` opens the Navi menu at the mouse. The same menu shows from the
   menu bar icon. It is an AppKit `NSStatusItem` menu, built in `NaviMenu`.
 - Navi marks its own pasteboard writes with `NaviPasteboard.ownType`, so the
@@ -262,6 +289,7 @@ Xnapper's backgrounds, and macshot's auto-redact.
 | `project.yml` | XcodeGen spec. The `.xcodeproj` is generated and gitignored |
 | `App/Sources/NaviApp.swift` | Global hot keys, app wiring |
 | `App/Sources/NaviMenu.swift` | Menu bar icon and the Navi menu (`⌥⇧⌘N` opens it at the mouse) |
+| `App/Sources/SettingsPanel.swift`, `SettingsView.swift` | Settings panel: toggles, History shortcut, permissions |
 | `Packages/NaviCore` | `Inbox` (shared history store), `CaptureItem`, `HotKey` (Carbon global hotkeys) |
 | `Packages/NaviClipboard` | Pasteboard watcher, Maccy-style panel, paste |
 | `Packages/NaviRecording` | Screen recording engine, record bar, camera bubble, overlays, GIF, trim |
@@ -270,7 +298,7 @@ Xnapper's backgrounds, and macshot's auto-redact.
 | `docs/capture-plan.html` | Prototype, feature map, and plan |
 | `docs/upstream-hex.md` | Hex as the upstream for talk to type: feature map, sync steps |
 | `Packages/NaviDictation/Bench` | Dictation benchmark cases and saved results |
-| `docs/performance.md` | History performance: what `history-bench` times, how search and saves work, numbers |
+| `docs/performance.md` | Speed goal and numbers for every area; capture, recording, and history benchmarks |
 | `Packages/NaviClipboard/Bench` | Saved `history-bench` results |
 
 `Inbox` keeps items in `~/Library/Application Support/Navi/` (`history.json`

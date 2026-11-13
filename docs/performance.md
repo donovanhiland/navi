@@ -1,5 +1,68 @@
 # Performance
 
+## Speed goal
+
+Goal: every area of Navi is at least 2× faster than `main` at `ce7cc78`. Each number below is a median, measured on an Apple M5 Pro with macOS 27.0.1, release build, with the old and new code run one after the other on the same machine.
+
+| Area | What is timed | Before | After | Faster |
+|---|---|---:|---:|---:|
+| Capture | PNG of a 3K area (`png-encode-area-3k`) | 24.2 ms | 4.1 ms | 5.9× |
+| Capture | PNG of a full 5K screen (`png-encode-full-5k`) | 117 ms | 17.6 ms | 6.7× |
+| Capture | Screen freeze source (`SCShareableContent`, warm) | 20 ms | 8 ms, or none with the fast path | 2.5× |
+| Capture | Window shot wait before the capture | 150 ms | 0 ms when the app is still active | — |
+| Capture | Selection overlay redraw per mouse move, 3K screen | 7–13 ms (full screen) | only changed rects; the dim and ring are GPU layers | — |
+| Markup | Frame while drawing or moving a mark, 5K (`markup-drag-*`) | 10.9 ms | 0.45 ms | 24× |
+| Markup | Save markup (`markup-store-save-3k`) | 51.4 ms | 8.2 ms | 6.3× |
+| Markup | Open edit after capture (`editor-open-*`) | 34 ms | 19 ms, window on screen at about 10 ms | 1.8–3× |
+| Background | Render, 3K (`background-render-3k`) | 62.7 ms | 12.0 ms | 5.2× |
+| OCR | First Capture Text after a macOS update | 25–40 s | about 0.1 s (warmed in the background) | — |
+| Scroll capture | Frames per second while scrolling | about 5.5 | about 11 | 2× |
+| History | See Current numbers below | | | 2–40× |
+| Clipboard | TIFF copy to history, total (`watcher-image-tiff-total`) | 29.3 ms | 5.5 ms | 5.3× |
+| Recording | GIF, 75 frames | 550 ms | 130 ms | 4.2× |
+| Recording | Trim export, 2.5 s | 19.5 ms | 4.5 ms | 4.3× |
+| Dictation | Release to text | done in #21 | | |
+
+Not at 2×: warm OCR (about 75 ms, all inside Vision), scroll frame registration (about 7.5 ms, Vision), audio mixdown of short clips (about 12 ms of fixed AVFoundation cost), and recording stop (about 8 ms, `finishWriting`).
+
+### Capture and markup benchmarks
+
+```sh
+cd Packages/NaviCapture
+NAVI_BENCH=1 swift test -c release -Xswiftc -enable-testing --filter SpeedBench
+NAVI_BENCH=1 swift test -c release -Xswiftc -enable-testing --filter UIPathBench
+```
+
+`NAVI_BENCH_IMAGE=<png>` uses a real screenshot instead of the synthetic one. `UIPathBench` opens real windows; its draw times are only real while the screen is unlocked.
+
+`PNGEncoder` (NaviCore) writes PNGs in parallel: the image is split into row bands, each band is filtered and deflated (zlib level 3) on its own core, and the bands are joined with sync flushes into one zlib stream. It keeps the color profile, the DPI, and the exact pixels, and drops the alpha channel when every pixel is opaque. Images with more than 8 bits per channel use ImageIO.
+
+### Screenshot flow
+
+The app logs each step under category `Timing`:
+
+```sh
+log stream --level info --predicate 'subsystem == "com.donovanhiland.navi" AND category == "Timing"'
+```
+
+`select →` steps start at the shortcut; `shot →` steps start at mouse up.
+
+Live numbers in the real app (M5 Pro, 3K screen, Debug build with `SWIFT_OPTIMIZATION_LEVEL=-O`, median of four warm runs; "first" is the first shot after launch):
+
+| Step | Before | After |
+|---|---|---|
+| Shortcut to overlay and frozen screen ready | 131 ms (first 602 ms); the overlay showed the live screen first, then the frozen screen | 67 ms (first 165 ms), shown together |
+| Mouse up to corner card on screen | 72 ms | 38 ms |
+| Mouse up to edit-after-capture editor on screen | 74 ms (first 620 ms) | 45 ms (first 72 ms) |
+
+Plain Debug builds do not optimize `PNGEncoder`, so the card step is slower there than with ImageIO. Measure with `-O` or Release.
+
+### Recording benchmark
+
+```sh
+cd Packages/NaviRecording && NAVI_BENCH=1 swift test -c release -Xswiftc -enable-testing --filter SpeedBench
+```
+
 ## History benchmark
 
 `history-bench` times the History list (`⇧⌘V`) on synthetic histories of 200, 1,000 and 5,000 items. It never reads or writes your real history.
@@ -79,21 +142,27 @@ Open the `.trace` file in Instruments. In the `os_signpost` track, filter by sub
 
 Goal: every main-thread scenario has a p95 under 16.6 ms (one 60 Hz frame) at 200, 1,000 and 5,000 items. **Met** on both corpora.
 
-5,000 items, median / p95 in ms, at commit `2697239` on Apple M4 Pro, macOS 27.2, release build, seed 42. The runs are not saved; reproduce them with `swift run -c release history-bench` and `--corpus mixed`. Before is the baseline below.
+5,000 items, median in ms, on Apple M5 Pro, macOS 27.0.1, release build, seed 42. Before is `main` at `ce7cc78`; both runs used the same bench sources, one after the other.
 
-| Scenario | Before (ascii) | ascii | mixed |
-|---|---:|---:|---:|
-| `load` | 16.4 / 16.7 | 5.2 / 5.9 | 8.0 / 10.1 |
-| `add` | 35.9 / 37.6 | 0.5 / 0.6 | 0.6 / 0.7 |
-| `add-large-mixed` | | 1.2 / 1.6 | 1.3 / 1.5 |
-| `search-common` | 8.7 / 9.1 | 1.4 / 2.0 | |
-| `search-rare` | 33.3 / 33.6 | 3.7 / 3.8 | |
-| Slowest warm search | 34.3 / 34.6 | 6.5 / 7.0 | 9.4 / 9.6 |
-| First search after launch (`search-cold`) | | 6.1 / 6.2 | 6.2 / 6.3 |
-| `results` | 8.4 / 8.8 | 1.5 / 1.9 | 8.4 / 8.6 |
-| `save-flush` (background) | | 32.3 / 38.8 | 55.1 / 61.0 |
-| `search-warmup` (background) | | 10.5 / 11.1 | 185 / 187 |
+| Scenario | ascii before | ascii after | mixed before | mixed after |
+|---|---:|---:|---:|---:|
+| `load` | 4.70 | 1.37 | 7.94 | 2.89 |
+| `add` | 0.48 | 0.061 | 0.65 | 0.083 |
+| `add-large-mixed` | 1.18 | 0.045 | 1.25 | 0.050 |
+| `search-common` | 1.42 | 0.29 | | |
+| `search-rare` | 4.49 | 0.14 | | |
+| `search-none` | 4.20 | 0.14 | 8.74 | 0.21 |
+| `search-mixed-*` | | | 6.6–8.7 | 0.21–0.27 |
+| `search-cold` | 6.11 | 1.39 | 6.2 | 2.75 |
+| `results` | 1.34 | 0.26 | 7.7 | 0.32 |
+| `save-flush` (background) | 25.8 | 2.54 | 37.8 | 4.76 |
+| `search-warmup` (background) | 10.0 | 2.41 | 159 | 38.6 |
+| `watcher-text` | 0.59 | 0.10 | | |
+| `paste-image` | 9.4 | 0.27 | | |
+| `thumbnail-large` | 8.8 | 0.68 | | |
+| `preview-large` | 7.9 | 2.4 | | |
 
+`--only a,b` runs a subset of scenarios.
 
 ## Baseline
 

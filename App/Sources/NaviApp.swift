@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshotHotKeys: [HotKey] = []
     private var pasteLastHotKey: HotKey?
     private lazy var naviMenu = NaviMenu(app: self)
+    private lazy var settingsPanel = SettingsPanel(app: self)
     private lazy var shortcutRecorder = HistoryShortcutRecorder(
         apply: { [weak self] in self?.setHistoryShortcut($0) ?? .refused },
         onClose: { [weak self] in self?.resumeHotKeys() }
@@ -63,6 +64,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case nil: askAboutScreenshotKeys()
         }
         if !dictation.hasChosen { askAboutTalkToType() }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.settingsPanel.prepare()
+        }
         if !ClipboardFeature.hasAccessibility {
             ClipboardFeature.requestAccessibility()
         }
@@ -175,6 +180,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             registerHotKeys()
             logger.info("Navi shortcuts resumed, History on \(self.historyShortcut.display, privacy: .public)")
         }
+    }
+
+    func showSettings(at anchor: CGPoint) {
+        settingsPanel.show(at: anchor)
     }
 
     func changeHistoryShortcut() {

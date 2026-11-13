@@ -1,24 +1,30 @@
 import AppKit
+import NaviCore
 import CoreImage
 import CoreImage.CIFilterBuiltins
 
 @MainActor
 final class AnnotationRenderer {
-    private let ciContext = CIContext()
     private var effectsBase: CGImage?
     private var blurred: CGImage?
     private var pixelated: CGImage?
 
-    func render(base: CGImage, marks: [Annotation], selection: UUID? = nil) -> CGImage? {
+    func render(base: CGImage, marks: [Annotation], selection: UUID? = nil, region: CGRect? = nil) -> CGImage? {
         let width = base.width, height = base.height
-        guard let context = CGContext(
-            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+        let full = CGRect(x: 0, y: 0, width: width, height: height)
+        let area = region ?? full
+        guard area.width >= 1, area.height >= 1, let context = CGContext(
+            data: nil, width: Int(area.width), height: Int(area.height), bitsPerComponent: 8, bytesPerRow: 0,
             space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else { return nil }
-        context.translateBy(x: 0, y: CGFloat(height))
+        context.translateBy(x: 0, y: area.height)
         context.scaleBy(x: 1, y: -1)
-        let full = CGRect(x: 0, y: 0, width: width, height: height)
-        Self.draw(base, in: full, context: context)
+        context.translateBy(x: -area.minX, y: -area.minY)
+        if region != nil, let piece = base.cropping(to: area) {
+            Self.draw(piece, in: area, context: context)
+        } else {
+            Self.draw(base, in: full, context: context)
+        }
 
         let effects = marks.filter { $0.kind == .blur || $0.kind == .pixelate }
         if !effects.isEmpty { prepareEffects(for: base) }
@@ -26,7 +32,11 @@ final class AnnotationRenderer {
             guard let image = mark.kind == .blur ? blurred : pixelated else { continue }
             context.saveGState()
             context.clip(to: CaptureGeometry.rect(from: mark.start, to: mark.end))
-            Self.draw(image, in: full, context: context)
+            if region != nil, let piece = image.cropping(to: area) {
+                Self.draw(piece, in: area, context: context)
+            } else {
+                Self.draw(image, in: full, context: context)
+            }
             context.restoreGState()
         }
 
@@ -53,6 +63,42 @@ final class AnnotationRenderer {
         }
         NSGraphicsContext.restoreGraphicsState()
         return context.makeImage()
+    }
+
+    struct Patch {
+        let image: CGImage
+        let rect: CGRect
+    }
+
+    func patch(base: CGImage, marks: [Annotation], live: Annotation) -> Patch? {
+        let full = CGRect(x: 0, y: 0, width: base.width, height: base.height)
+        let margin = max(CGFloat(live.lineWidth) * 4, CGFloat(live.fontSize)) + 48
+        let rect = paintedBounds(of: live).insetBy(dx: -margin, dy: -margin).integral.intersection(full)
+        guard !rect.isNull, rect.width >= 1, rect.height >= 1,
+              let image = render(base: base, marks: marks, region: rect)
+        else { return nil }
+        return Patch(image: image, rect: rect)
+    }
+
+    private func paintedBounds(of mark: Annotation) -> CGRect {
+        switch mark.kind {
+        case .text:
+            let size = ((mark.text ?? "") as NSString).size(withAttributes: textAttributes(for: mark))
+            return CGRect(origin: mark.start, size: size).union(mark.bounds)
+        case .arrow, .line:
+            return CaptureGeometry.rect(from: mark.start, to: mark.end)
+        default:
+            return mark.bounds.isNull ? CGRect(origin: mark.start, size: .zero) : mark.bounds
+        }
+    }
+
+    private func textAttributes(for mark: Annotation) -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: CGFloat(mark.fontSize), weight: .bold),
+            .foregroundColor: NSColor(cgColor: mark.color.cgColor) ?? .red,
+            .strokeColor: NSColor.white,
+            .strokeWidth: -2.5,
+        ]
     }
 
     private func drawSelection(of mark: Annotation, imageWidth: CGFloat, context: CGContext) {
@@ -116,13 +162,7 @@ final class AnnotationRenderer {
             stroke(mark.points, context: context)
             context.restoreGState()
         case .text:
-            let attributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: CGFloat(mark.fontSize), weight: .bold),
-                .foregroundColor: NSColor(cgColor: mark.color.cgColor) ?? .red,
-                .strokeColor: NSColor.white,
-                .strokeWidth: -2.5,
-            ]
-            (mark.text ?? "").draw(at: mark.start, withAttributes: attributes)
+            (mark.text ?? "").draw(at: mark.start, withAttributes: textAttributes(for: mark))
         case .counter:
             let radius = CGFloat(mark.fontSize) * 0.8
             let circle = CGRect(x: mark.start.x - radius, y: mark.start.y - radius, width: radius * 2, height: radius * 2)
@@ -178,7 +218,39 @@ final class AnnotationRenderer {
 
     private func prepareEffects(for base: CGImage) {
         guard effectsBase !== base else { return }
+        let effects = Self.effects(for: base)
         effectsBase = base
+        blurred = effects.blurred
+        pixelated = effects.pixelated
+    }
+
+    func prewarmEffects(for base: CGImage) {
+        guard effectsBase !== base else { return }
+        let box = SendableImage(image: base)
+        Task { [weak self] in
+            let made = await Task.detached(priority: .utility) { () -> SendableEffects in
+                let effects = AnnotationRenderer.effects(for: box.image)
+                return SendableEffects(blurred: effects.blurred, pixelated: effects.pixelated)
+            }.value
+            guard let self, effectsBase !== box.image else { return }
+            effectsBase = box.image
+            blurred = made.blurred
+            pixelated = made.pixelated
+        }
+    }
+
+    private struct SendableImage: @unchecked Sendable {
+        let image: CGImage
+    }
+
+    private struct SendableEffects: @unchecked Sendable {
+        let blurred: CGImage?
+        let pixelated: CGImage?
+    }
+
+    private nonisolated static let sharedContext = CIContext()
+
+    nonisolated static func effects(for base: CGImage) -> (blurred: CGImage?, pixelated: CGImage?) {
         let input = CIImage(cgImage: base)
         let extent = input.extent
         let size = Double(max(base.width, base.height))
@@ -186,12 +258,13 @@ final class AnnotationRenderer {
         let blur = CIFilter.gaussianBlur()
         blur.inputImage = input.clampedToExtent()
         blur.radius = Float(max(10, size / 120))
-        blurred = blur.outputImage.flatMap { ciContext.createCGImage($0.cropped(to: extent), from: extent) }
+        let blurred = blur.outputImage.flatMap { sharedContext.createCGImage($0.cropped(to: extent), from: extent) }
 
         let pixellate = CIFilter.pixellate()
         pixellate.inputImage = input.clampedToExtent()
         pixellate.scale = Float(max(10, size / 90))
-        pixelated = pixellate.outputImage.flatMap { ciContext.createCGImage($0.cropped(to: extent), from: extent) }
+        let pixelated = pixellate.outputImage.flatMap { sharedContext.createCGImage($0.cropped(to: extent), from: extent) }
+        return (blurred, pixelated)
     }
 
     nonisolated static func draw(_ image: CGImage, in rect: CGRect, context: CGContext) {
@@ -224,8 +297,6 @@ enum ImageOps {
     }
 
     static func png(_ image: CGImage, pointSize: CGSize) -> Data? {
-        let bitmap = NSBitmapImageRep(cgImage: image)
-        bitmap.size = pointSize
-        return bitmap.representation(using: .png, properties: [:])
+        PNGEncoder.encode(image, pointSize: pointSize)
     }
 }

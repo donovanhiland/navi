@@ -207,7 +207,7 @@ final class HistoryShortcutRecorder: NSObject, NSWindowDelegate {
             onCancel: { [weak self] in self?.finish() }
         ))
         let size = hosting.fittingSize
-        let container = Self.background(cornerRadius: 12)
+        let container = NaviPanelBackground.make(cornerRadius: 12)
         container.frame = CGRect(origin: .zero, size: size)
         hosting.frame = container.bounds
         hosting.autoresizingMask = [.width, .height]
@@ -237,23 +237,6 @@ final class HistoryShortcutRecorder: NSObject, NSWindowDelegate {
         monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) ?? false } ? nil : event
         }
-    }
-
-    private static func background(cornerRadius: CGFloat) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .menu
-        view.blendingMode = .behindWindow
-        view.state = .active
-        let edge = cornerRadius * 2 + 1
-        let mask = NSImage(size: CGSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius).fill()
-            return true
-        }
-        mask.capInsets = NSEdgeInsets(top: cornerRadius, left: cornerRadius, bottom: cornerRadius, right: cornerRadius)
-        mask.resizingMode = .stretch
-        view.maskImage = mask
-        return view
     }
 
     private func handle(_ event: NSEvent) -> Bool {

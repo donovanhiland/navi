@@ -58,6 +58,9 @@ final class AnnotateModel {
         didSet { render() }
     }
     private(set) var rendered: CGImage?
+    private(set) var patch: AnnotationRenderer.Patch?
+    @ObservationIgnored private var renderedMarks: [Annotation]?
+    @ObservationIgnored private var renderedBase: CGImage?
 
     private var undoStack = UndoStack<Snapshot>()
     @ObservationIgnored private let renderer = AnnotationRenderer()
@@ -79,6 +82,7 @@ final class AnnotateModel {
         self.placement = placement
         self.scale = max(scale, 1)
         render()
+        renderer.prewarmEffects(for: base)
     }
 
     func pointerMoved(to point: CGPoint?) {
@@ -245,9 +249,25 @@ final class AnnotateModel {
         render()
     }
 
-    func cursor(at point: CGPoint) -> NSCursor {
+    enum Pointer: Equatable {
+        case arrow, openHand, closedHand, iBeam, crosshair
+        case resize(NSCursor.FrameResizePosition)
+
+        var cursor: NSCursor {
+            switch self {
+            case .arrow: .arrow
+            case .openHand: .openHand
+            case .closedHand: .closedHand
+            case .iBeam: .iBeam
+            case .crosshair: .crosshair
+            case let .resize(position): .frameResize(position: position, directions: .all)
+            }
+        }
+    }
+
+    func pointer(at point: CGPoint) -> Pointer {
         if let mark = selectedMark, let handle = mark.handle(at: point, tolerance: 10 * scale) {
-            return Self.resizeCursor(handle, of: mark)
+            return Self.resizePointer(handle, of: mark)
         }
         switch tool {
         case .select:
@@ -259,24 +279,34 @@ final class AnnotateModel {
         }
     }
 
-    private static func resizeCursor(_ handle: Annotation.Handle, of mark: Annotation) -> NSCursor {
+    func dragPointer(at point: CGPoint) -> Pointer {
+        if let resizing, let mark = selectedMark { return Self.resizePointer(resizing, of: mark) }
+        if dragOrigin != nil { return .closedHand }
+        if draft != nil || (tool == .crop && cropRect != nil) { return .crosshair }
+        return pointer(at: point)
+    }
+
+    var hoverPointer: Pointer? {
+        hoverPoint.map(pointer(at:))
+    }
+
+    private static func resizePointer(_ handle: Annotation.Handle, of mark: Annotation) -> Pointer {
         switch handle {
-        case .top: return .frameResize(position: .top, directions: .all)
-        case .bottom: return .frameResize(position: .bottom, directions: .all)
-        case .left: return .frameResize(position: .left, directions: .all)
-        case .right: return .frameResize(position: .right, directions: .all)
+        case .top: return .resize(.top)
+        case .bottom: return .resize(.bottom)
+        case .left: return .resize(.left)
+        case .right: return .resize(.right)
         default:
             guard mark.isBox else { return .crosshair }
             let point = mark.point(of: handle)
             let box = mark.box
             let top = point.y <= box.midY, left = point.x <= box.midX
-            let position: NSCursor.FrameResizePosition = switch (top, left) {
-            case (true, true): .topLeft
-            case (true, false): .topRight
-            case (false, true): .bottomLeft
-            case (false, false): .bottomRight
+            return switch (top, left) {
+            case (true, true): .resize(.topLeft)
+            case (true, false): .resize(.topRight)
+            case (false, true): .resize(.bottomLeft)
+            case (false, false): .resize(.bottomRight)
             }
-            return .frameResize(position: position, directions: .all)
         }
     }
 
@@ -408,11 +438,30 @@ final class AnnotateModel {
     }
 
     private func render() {
-        var marks = document.annotations
-        if let editing = textEdit?.id { marks.removeAll { $0.id == editing } }
-        if let preview = textPreview { marks.append(preview) }
-        if let draft { marks.append(draft) }
-        rendered = renderer.render(base: base, marks: marks)
+        var all = document.annotations
+        if let editing = textEdit?.id { all.removeAll { $0.id == editing } }
+        var live: [Annotation] = []
+        if let id = dragOrigin?.id, let mark = all.first(where: { $0.id == id }) { live.append(mark) }
+        if let preview = textPreview {
+            all.append(preview)
+            live.append(preview)
+        }
+        if let draft {
+            all.append(draft)
+            live.append(draft)
+        }
+        let single = live.count == 1 && live[0].kind != .spotlight ? live[0] : nil
+        let committed = single.map { mark in all.filter { $0.id != mark.id } } ?? all
+        if committed != renderedMarks || base !== renderedBase || rendered == nil {
+            rendered = committed.isEmpty ? base : renderer.render(base: base, marks: committed)
+            renderedMarks = committed
+            renderedBase = base
+        }
+        if let single, rendered != nil {
+            patch = renderer.patch(base: base, marks: all, live: single)
+        } else if patch != nil {
+            patch = nil
+        }
     }
 }
 

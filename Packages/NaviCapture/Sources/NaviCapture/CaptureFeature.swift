@@ -32,6 +32,7 @@ public final class CaptureFeature {
     private var session: SelectionSession?
     private var scrollSession: ScrollCaptureSession?
     private var inPlaceEditor: InPlaceAnnotator?
+    private var editorStage: InPlaceAnnotator.Stage?
     private var frozenScreens: [(NSScreen, CapturedImage)] = []
     private var editors: [UUID: AnyObject] = [:]
     private var isBusy = false
@@ -55,6 +56,10 @@ public final class CaptureFeature {
             trim: { [weak self] in self?.trim($0) },
             setGIF: { [weak self] in self?.setGIF($0, $1) }
         )
+        if Self.hasScreenAccess { ScreenGrabber.prewarm() }
+        TextRecognizer.prewarmIfNeeded()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { _ = NSColorPanel.shared }
+        prepareAhead(after: 2.5)
     }
 
     public static var hasScreenAccess: Bool { CGPreflightScreenCaptureAccess() }
@@ -158,18 +163,28 @@ public final class CaptureFeature {
         _ mode: SelectionSession.Mode, purpose: SelectionSession.Purpose, modeBar: Bool = false, timer: Int = 0
     ) {
         if purpose == .record, onRecordRequest == nil { return }
+        CaptureTiming.start("select")
         guard begin() else {
             copiesNextShot = false
             return
         }
+        let freeze = PendingFreeze()
+        let fastFreeze = ScreenGrabber.startFreeze(hideDesktopIcons: settings.hideDesktopIcons) { [weak self] screens in
+            self?.frozeFast(screens, freeze)
+        }
         let previousApp = NSWorkspace.shared.frontmostApplication
-        let windows = ScreenGrabber.onScreenWindows()
-        let session = SelectionSession(screens: NSScreen.screens, mode: mode, windows: windows) { [weak self] outcome in
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let listing = Task.detached(priority: .userInitiated) { ScreenGrabber.onScreenWindows(primaryHeight: primaryHeight) }
+        let session = SelectionSession(screens: NSScreen.screens, mode: mode, windows: []) { [weak self] outcome in
             guard let self else { return }
             let session = self.session
             selectionEnded(
                 outcome, purpose: session?.purpose ?? purpose, timer: session?.timer ?? timer, previousApp: previousApp
             )
+        }
+        Task { [weak session] in
+            let windows = await listing.value
+            session?.updateWindows(windows)
         }
         session.purpose = purpose
         session.timer = timer
@@ -178,7 +193,39 @@ public final class CaptureFeature {
         session.canRecord = onRecordRequest != nil
         session.keepsOverlayUntilDone = purpose == .screenshot && timer == 0 && settings.editAfterCapture
         self.session = session
-        session.begin()
+        freeze.session = session
+        CaptureTiming.mark("select", "session made")
+        session.begin(revealAfterFreeze: fastFreeze)
+        CaptureTiming.mark("select", "overlay set up")
+        if !fastFreeze { freezeSlowly(session) }
+    }
+
+    private func prepareAhead(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, session == nil else { return }
+            cards.prepare()
+            guard settings.editAfterCapture, let screen = NSScreen.underMouse ?? NSScreen.main else { return }
+            if editorStage?.screen != screen { editorStage = InPlaceAnnotator.Stage(screen: screen) }
+        }
+    }
+
+    @MainActor
+    private final class PendingFreeze {
+        weak var session: SelectionSession?
+    }
+
+    private func frozeFast(_ screens: [(NSScreen, CapturedImage)]?, _ freeze: PendingFreeze) {
+        guard let session = freeze.session, session === self.session else { return }
+        guard let screens else {
+            freezeSlowly(session)
+            return
+        }
+        frozenScreens = screens
+        session.freeze(screens)
+        CaptureTiming.mark("select", "frozen screen ready")
+    }
+
+    private func freezeSlowly(_ session: SelectionSession) {
         Task { [weak self, weak session] in
             guard let self else { return }
             do {
@@ -186,6 +233,7 @@ public final class CaptureFeature {
                 guard let session else { return }
                 frozenScreens = screens
                 session.freeze(screens)
+                CaptureTiming.mark("select", "frozen screen ready")
             } catch {
                 logger.error("Could not freeze the screen: \(error.localizedDescription)")
                 session?.finish(.cancelled)
@@ -196,7 +244,9 @@ public final class CaptureFeature {
     private func selectionEnded(
         _ outcome: SelectionSession.Outcome, purpose: SelectionSession.Purpose, timer: Int, previousApp: NSRunningApplication?
     ) {
+        CaptureTiming.mark("shot", "selection ended")
         session = nil
+        prepareAhead(after: 1)
         let frozen = frozenScreens
         frozenScreens = []
         if case let (.area(captured, screen, rect), .screenshot) = (outcome, purpose), timer == 0, settings.editAfterCapture {
@@ -250,7 +300,7 @@ public final class CaptureFeature {
         case let (.window(id, screen), _):
             Task {
                 defer { isBusy = false }
-                try? await Task.sleep(for: .milliseconds(150))
+                await Self.waitUntilActive(previousApp)
                 await Countdown.run(seconds: timer, on: screen)
                 do {
                     let captured = try await ScreenGrabber.captureWindow(id: id)
@@ -259,6 +309,14 @@ public final class CaptureFeature {
                     logger.error("Window capture failed: \(error.localizedDescription)")
                 }
             }
+        }
+    }
+
+    private static func waitUntilActive(_ app: NSRunningApplication?) async {
+        guard let app else { return }
+        for _ in 0 ..< 15 {
+            if app.isActive { return }
+            try? await Task.sleep(for: .milliseconds(10))
         }
     }
 
@@ -303,7 +361,9 @@ public final class CaptureFeature {
             }
         }
         inPlaceEditor = editor
-        editor.show()
+        let stage = editorStage
+        editorStage = nil
+        editor.show(on: stage)
     }
 
     private func deliverEdited(
@@ -357,16 +417,16 @@ public final class CaptureFeature {
             width: CGFloat(captured.image.width) / captured.scale,
             height: CGFloat(captured.image.height) / captured.scale
         )
-        if copiesNextShot || settings.copyToClipboard {
-            NaviPasteboard.write(image: Self.image(captured.image, pointSize: pointSize))
-        }
-        copiesNextShot = false
         let started = ContinuousClock.now
         let image = captured.image
+        let encoding = Task.detached(priority: .userInitiated) {
+            ImageOps.png(image, pointSize: pointSize)
+        }
+        let copies = copiesNextShot || settings.copyToClipboard
+        copiesNextShot = false
         Task {
-            let encoded = await Task.detached(priority: .userInitiated) {
-                ImageOps.png(image, pointSize: pointSize)
-            }.value
+            let encoded = await encoding.value
+            defer { if copies { NaviPasteboard.write(image: Self.image(image, pointSize: pointSize)) } }
             guard let png = encoded else {
                 logger.error("Could not encode the capture as PNG")
                 return
@@ -378,6 +438,7 @@ public final class CaptureFeature {
             do {
                 let card = try Card(inboxID: item?.id, image: Self.image(image, pointSize: pointSize), png: png, createdAt: .now)
                 cards.show(card, on: screen)
+                CaptureTiming.markOnScreen("shot", "card shown")
             } catch {
                 logger.error("Could not make the corner card: \(error.localizedDescription)")
             }

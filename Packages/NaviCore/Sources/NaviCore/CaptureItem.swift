@@ -62,6 +62,7 @@ extension CaptureItem {
     private static let parallelThreshold = 512 * 1024
 
     nonisolated static func decodeHistory(from data: Data) throws -> [CaptureItem] {
+        if let items = HistoryCodec.decode(data) { return items }
         if data.count >= parallelThreshold, let items = decodeInParallel(data) { return items }
         return try JSONDecoder().decode([CaptureItem].self, from: data)
     }

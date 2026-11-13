@@ -33,7 +33,7 @@ final class SelectionSession {
     private weak var heldOverlay: OverlayView?
     var hasHeldSelection: Bool { heldOverlay != nil }
     private var modeBar: ModeBarPanel?
-    let windows: [OnScreenWindow]
+    private(set) var windows: [OnScreenWindow]
     private var overlays: [OverlayWindow] = []
     private var keyMonitor: Any?
     private var sessionKeys: [HotKey] = []
@@ -53,23 +53,19 @@ final class SelectionSession {
         for (screen, captured) in images {
             overlays.first { $0.overlayView.screen == screen }?.overlayView.captured = captured
         }
+        reveal()
     }
 
-    func begin() {
-        let mouseScreen = NSScreen.underMouse
-        for overlay in overlays {
-            overlay.orderFrontRegardless()
-            if overlay.overlayView.screen == mouseScreen {
-                overlay.makeKey()
-                overlay.makeFirstResponder(overlay.overlayView)
-                overlay.overlayView.placeMouse(at: NSEvent.mouseLocation)
-            }
-        }
-        if showsModeBar, let mouseScreen {
-            let bar = ModeBarPanel(session: self, screen: mouseScreen)
-            bar.orderFrontRegardless()
-            modeBar = bar
-        }
+    func updateWindows(_ windows: [OnScreenWindow]) {
+        self.windows = windows
+        guard revealed else { return }
+        for overlay in overlays { overlay.overlayView.windowsChanged() }
+    }
+
+    private var revealed = false
+    static let revealLimit: TimeInterval = 0.1
+
+    func begin(revealAfterFreeze: Bool = false) {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             switch Int(event.keyCode) {
@@ -86,7 +82,35 @@ final class SelectionSession {
             HotKey(keyCode: UInt32(kVK_Return), modifiers: 0) { [weak self] in self?.confirmHeldSelection() },
             HotKey(keyCode: UInt32(kVK_ANSI_KeypadEnter), modifiers: 0) { [weak self] in self?.confirmHeldSelection() },
         ].compactMap { $0 }
+        guard revealAfterFreeze else {
+            reveal()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.revealLimit) { [weak self] in self?.reveal() }
+    }
+
+    private func reveal() {
+        guard !revealed, completion != nil else { return }
+        revealed = true
+        let mouseScreen = NSScreen.underMouse
+        for overlay in overlays {
+            if overlay.overlayView.screen == mouseScreen { overlay.overlayView.placeMouse(at: NSEvent.mouseLocation) }
+            overlay.overlayView.refreshDisplay(full: true)
+            overlay.animationBehavior = .none
+            overlay.orderFrontRegardless()
+            overlay.animationBehavior = .default
+            if overlay.overlayView.screen == mouseScreen {
+                overlay.makeKey()
+                overlay.makeFirstResponder(overlay.overlayView)
+            }
+        }
+        if showsModeBar, let mouseScreen {
+            let bar = ModeBarPanel(session: self, screen: mouseScreen)
+            bar.orderFrontRegardless()
+            modeBar = bar
+        }
         refresh()
+        CaptureTiming.markOnScreen("select", "overlay on screen")
     }
 
     func toggleMode() {
@@ -113,31 +137,11 @@ final class SelectionSession {
         heldOverlay?.finishSelection()
     }
 
-    var hint: String {
-        if hasHeldSelection {
-            let verb = switch purpose {
-            case .screenshot: "capture"
-            case .text: "copy the text"
-            case .scroll: "start scrolling"
-            case .record: "open the record bar"
-            }
-            return "Return to \(verb)  ·  Drag inside to move, corners to resize  ·  Esc to cancel"
-        }
-        let action = switch purpose {
-        case .screenshot: mode == .area ? "Click a window or drag an area" : "Click a window"
-        case .text: "Drag over text to copy it"
-        case .scroll: "Drag over the area to scroll"
-        case .record: mode == .area ? "Click a window or drag an area to record" : "Click a window to record"
-        }
-        let space = purpose == .text || purpose == .scroll ? "" : (mode == .area ? "  ·  Space for window" : "  ·  Space for area")
-        return action + space + "  ·  Esc to cancel"
-    }
-
     func refresh() {
         (mode == .area ? NSCursor.crosshair : OverlayView.cameraCursor).set()
         modeBar?.refresh()
         for overlay in overlays {
-            overlay.overlayView.needsDisplay = true
+            overlay.overlayView.refreshDisplay(full: true)
             overlay.invalidateCursorRects(for: overlay.overlayView)
         }
     }
@@ -160,13 +164,25 @@ final class SelectionSession {
             for overlay in overlays { overlay.animationBehavior = .none }
             modeBar?.animationBehavior = .none
         }
-        for overlay in overlays { overlay.orderOut(nil) }
-        modeBar?.orderOut(nil)
-        overlays = []
-        modeBar = nil
         let completion = completion
         self.completion = nil
+        let closing = overlays
+        overlays = []
+        let close = { [modeBar] in
+            for overlay in closing { overlay.orderOut(nil) }
+            modeBar?.orderOut(nil)
+        }
+        modeBar = nil
+        if case .cancelled = outcome {
+            close()
+            completion?(outcome)
+            return
+        }
+        if keepsOverlayUntilDone, case .area = outcome {
+            for overlay in closing { overlay.animationBehavior = .none }
+        }
         completion?(outcome)
+        close()
     }
 }
 
@@ -189,6 +205,9 @@ final class OverlayWindow: NSPanel {
         let container = NSView(frame: CGRect(origin: .zero, size: screen.frame.size))
         container.wantsLayer = true
         container.layer?.contentsGravity = .resize
+        view.dimView.frame = container.bounds
+        view.dimView.autoresizingMask = [.width, .height]
+        container.addSubview(view.dimView)
         view.frame = container.bounds
         view.autoresizingMask = [.width, .height]
         container.addSubview(view)
@@ -198,13 +217,83 @@ final class OverlayWindow: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+final class DimView: NSView {
+    private let dim = CAShapeLayer()
+    private let fade = CAShapeLayer()
+    private let ringGroup = CALayer()
+    private let ring = CAShapeLayer()
+    private let halo = CAShapeLayer()
+    private static let dimColor = CGColor(gray: 0, alpha: 0.35)
+
+    init() {
+        super.init(frame: .zero)
+        layer = CALayer()
+        wantsLayer = true
+        dim.fillRule = .evenOdd
+        dim.fillColor = Self.dimColor
+        fade.fillColor = nil
+        ring.fillColor = nil
+        ring.strokeColor = WindowHighlight.purple.cgColor
+        ring.lineWidth = 2
+        ring.shadowColor = WindowHighlight.purple.cgColor
+        ring.shadowOpacity = 0.55
+        ring.shadowRadius = 14
+        ring.shadowOffset = .zero
+        halo.fillColor = nil
+        halo.strokeColor = WindowHighlight.purple.withAlphaComponent(0.28).cgColor
+        halo.lineWidth = 3
+        ringGroup.addSublayer(ring)
+        ringGroup.addSublayer(halo)
+        for sublayer in [dim, fade, ringGroup] { layer?.addSublayer(sublayer) }
+        update(hole: nil, fade: nil, alpha: 1, ring: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        for sublayer in [dim, fade, ringGroup, ring, halo] { sublayer.contentsScale = scale }
+    }
+
+    func update(hole: CGPath?, fade fadeHole: CGPath?, alpha: CGFloat, ring frame: CGRect?) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        if let hole { path.addPath(hole) }
+        for sublayer in [dim, fade, ringGroup] { sublayer.frame = bounds }
+        ring.frame = bounds
+        halo.frame = bounds
+        dim.path = path
+        fade.path = fadeHole
+        fade.fillColor = CGColor(gray: 0, alpha: 0.35 * (1 - alpha))
+        if let frame, alpha > 0 {
+            let radius: CGFloat = 12
+            ring.path = CGPath(roundedRect: frame.insetBy(dx: -1, dy: -1), cornerWidth: radius + 1, cornerHeight: radius + 1, transform: nil)
+            halo.path = CGPath(roundedRect: frame.insetBy(dx: -3.5, dy: -3.5), cornerWidth: radius + 3.5, cornerHeight: radius + 3.5, transform: nil)
+            ringGroup.opacity = Float(alpha)
+            ringGroup.isHidden = false
+        } else {
+            ringGroup.isHidden = true
+        }
+        CATransaction.commit()
+    }
+}
+
 final class OverlayView: NSView {
     weak var session: SelectionSession?
     let screen: NSScreen
+    let dimView = DimView()
+    private var painted: [CGRect] = []
+
     var captured: CapturedImage? {
         didSet {
             superview?.layer?.contents = captured?.image
-            needsDisplay = true
+            refreshDisplay(full: true)
             guard captured != nil, let pending = pendingFinish else { return }
             pendingFinish = nil
             pending()
@@ -220,8 +309,6 @@ final class OverlayView: NSView {
     private var dragBegan = false
     static let clickSlop: CGFloat = 5
     private let highlight = WindowHighlight()
-
-    private static let dim = NSColor.black.withAlphaComponent(0.35)
 
     static let cameraCursor: NSCursor = {
         let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
@@ -257,7 +344,7 @@ final class OverlayView: NSView {
         self.session = session
         self.screen = screen
         super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
-        highlight.onChange = { [weak self] in self?.needsDisplay = true }
+        highlight.onChange = { [weak self] in self?.refreshDisplay() }
     }
 
     @available(*, unavailable)
@@ -289,7 +376,7 @@ final class OverlayView: NSView {
         isHolding = false
         moveStart = nil
         updateHighlight()
-        needsDisplay = true
+        refreshDisplay()
     }
 
     private var isHolding = false
@@ -316,7 +403,7 @@ final class OverlayView: NSView {
     override func mouseExited(with event: NSEvent) {
         mouse = nil
         updateHighlight()
-        needsDisplay = true
+        refreshDisplay()
     }
 
     func placeMouse(at screenPoint: CGPoint) {
@@ -324,7 +411,8 @@ final class OverlayView: NSView {
         let point = convert(window.convertPoint(fromScreen: screenPoint), from: nil)
         guard bounds.contains(point) else { return }
         mouse = point
-        needsDisplay = true
+        updateHighlight()
+        refreshDisplay()
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -332,7 +420,7 @@ final class OverlayView: NSView {
         mouse = point
         cursor(at: point).set()
         updateHighlight()
-        needsDisplay = true
+        refreshDisplay()
     }
 
     private var picksHoveredWindow: Bool {
@@ -343,6 +431,11 @@ final class OverlayView: NSView {
     private var clickTarget: OnScreenWindow? {
         guard picksHoveredWindow, !dragBegan, let point = pressPoint ?? mouse else { return nil }
         return hoveredWindow(at: point)
+    }
+
+    func windowsChanged() {
+        updateHighlight()
+        refreshDisplay()
     }
 
     private func updateHighlight() {
@@ -372,7 +465,7 @@ final class OverlayView: NSView {
                 if let anchor = CaptureGeometry.oppositeCorner(of: selection, near: point, tolerance: Self.cornerGrab) {
                     dragStart = anchor
                     dragCurrent = point
-                    needsDisplay = true
+                    refreshDisplay()
                     return
                 }
                 if selection.contains(point) {
@@ -388,7 +481,7 @@ final class OverlayView: NSView {
             dragStart = snapped(point)
             dragCurrent = dragStart
             updateHighlight()
-            needsDisplay = true
+            refreshDisplay()
         }
     }
 
@@ -402,18 +495,20 @@ final class OverlayView: NSView {
             )
             dragStart = rect.origin
             dragCurrent = CGPoint(x: rect.maxX, y: rect.maxY)
-            needsDisplay = true
+            refreshDisplay()
             return
         }
         if let pressPoint, !dragBegan, !CaptureGeometry.isClick(from: pressPoint, to: point, threshold: Self.clickSlop) {
             dragBegan = true
             updateHighlight()
+            if session?.keepsOverlayUntilDone == true, !NSApp.isActive { NSApp.activate() }
         }
         dragCurrent = snapped(point)
-        needsDisplay = true
+        refreshDisplay()
     }
 
     override func mouseUp(with event: NSEvent) {
+        CaptureTiming.start("shot")
         if mode == .area, pressPoint != nil, !dragBegan, picksHoveredWindow {
             let target = clickTarget
             resetDrag()
@@ -444,7 +539,7 @@ final class OverlayView: NSView {
     func finishSelection() {
         guard mode == .area, let selection, selection.width >= 2, selection.height >= 2 else { return }
         resetDrag()
-        session?.hideEarly()
+        if captured == nil { session?.hideEarly() }
         let finish = { [weak self] in
             guard let self, let captured else { return }
             let pixels = CaptureGeometry.pixelRect(forSelection: selection, viewSize: bounds.size, imageSize: imageSize)
@@ -497,26 +592,68 @@ final class OverlayView: NSView {
         return snapped(mouse)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        context.interpolationQuality = .high
+    private struct Scene {
+        var hole: CGRect?
+        var showsHighlight: Bool
+    }
 
+    private var scene: Scene {
         let hole: CGRect? = switch mode {
         case .area: croppedArea
         case .window: mouse.flatMap { hoveredWindow(at: $0)?.frame }
         }
+        return Scene(hole: hole, showsHighlight: hole == nil && picksHoveredWindow && !dragBegan && highlight.frame != nil)
+    }
 
-        if hole == nil, picksHoveredWindow, !dragBegan, highlight.frame != nil {
-            highlight.drawDim(in: context, bounds: bounds, color: Self.dim)
-            highlight.drawRing(in: context)
-            highlight.drawLabel(in: bounds, scale: imageSize.width / max(bounds.width, 1))
+    func refreshDisplay(full: Bool = false) {
+        let scene = scene
+        if scene.showsHighlight {
+            dimView.update(hole: highlight.holePath, fade: highlight.alpha < 1 ? highlight.holePath : nil, alpha: highlight.alpha, ring: highlight.frame)
         } else {
-            context.saveGState()
-            context.setFillColor(Self.dim.cgColor)
-            context.addRect(bounds)
-            if let hole { context.addRect(hole) }
-            context.fillPath(using: .evenOdd)
-            context.restoreGState()
+            dimView.update(hole: scene.hole.map { CGPath(rect: $0, transform: nil) }, fade: nil, alpha: 1, ring: nil)
+        }
+        let now = paintedRects(scene)
+        if full {
+            needsDisplay = true
+        } else {
+            for rect in painted + now { setNeedsDisplay(rect) }
+        }
+        painted = now
+    }
+
+    private func paintedRects(_ scene: Scene) -> [CGRect] {
+        var rects: [CGRect] = []
+        if scene.showsHighlight, let frame = highlight.frame {
+            let visible = frame.intersection(bounds)
+            if !visible.isNull { rects.append(CGRect(x: visible.minX, y: visible.maxY - 50, width: visible.width, height: 50)) }
+        }
+        switch mode {
+        case .area:
+            if let selection = visibleSelection, let area = croppedArea {
+                rects.append(area.insetBy(dx: -12, dy: -12))
+                rects.append(CGRect(x: selection.minX - 4, y: selection.minY - 32, width: 200, height: 34))
+                rects.append(CGRect(x: selection.minX - 4, y: selection.maxY, width: 200, height: 34))
+            }
+            if let point = magnifierPoint, captured != nil {
+                let reach: CGFloat = 24 + 120 + 40
+                rects.append(CGRect(x: point.x - reach, y: point.y - reach, width: reach * 2, height: reach * 2))
+            }
+        case .window:
+            if let hole = scene.hole { rects.append(hole.insetBy(dx: -4, dy: -4)) }
+        }
+        return rects.compactMap { rect in
+            let clipped = rect.integral.intersection(bounds)
+            return clipped.isNull || clipped.isEmpty ? nil : clipped
+        }
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.interpolationQuality = .high
+        let scene = scene
+        let hole = scene.hole
+        if scene.showsHighlight {
+            highlight.drawLabel(in: bounds, scale: imageSize.width / max(bounds.width, 1))
         }
 
         switch mode {
@@ -539,7 +676,6 @@ final class OverlayView: NSView {
             }
         }
 
-        if mouse != nil { drawModeTag() }
     }
 
     private func drawCornerHandles(of rect: CGRect, in context: CGContext) {
@@ -563,12 +699,6 @@ final class OverlayView: NSView {
         var origin = CGPoint(x: selection.minX, y: selection.minY - 26)
         if origin.y < 4 { origin.y = selection.maxY + 6 }
         drawPill(text, at: origin)
-    }
-
-    private func drawModeTag() {
-        guard let text = session?.hint else { return }
-        let size = Self.pillSize(text)
-        drawPill(text, at: CGPoint(x: bounds.midX - size.width / 2, y: bounds.height - 70))
     }
 
     private func drawMagnifier(at point: CGPoint, image: CGImage, in context: CGContext) {

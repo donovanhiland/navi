@@ -32,7 +32,8 @@ jobs:
           for package in Packages/*/; do
             [ -d "$package/Tests" ] || continue
             echo "› ${package}"
-            (cd "$package" && swift test)
+            (cd "$package" && swift build --build-tests \
+              && script -q /dev/null perl -e 'alarm 600; exec @ARGV' swift test --skip-build)
           done
 
   build:

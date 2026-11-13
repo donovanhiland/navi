@@ -11,9 +11,9 @@ enum AudioMixdown {
             let audioTracks = try await asset.loadTracks(withMediaType: .audio)
             guard audioTracks.count > 1, let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { return }
             let videoFormat = try await videoTrack.load(.formatDescriptions).first
-            try await Task.detached(priority: .userInitiated) {
+            try await BlockingWork.run {
                 try copy(asset: asset, video: videoTrack, videoFormat: videoFormat, audio: audioTracks, to: temp)
-            }.value
+            }
             _ = try FileManager.default.replaceItemAt(url, withItemAt: temp)
         } catch {
             logger.error("Audio mixdown failed, keeping two tracks: \(error.localizedDescription)")

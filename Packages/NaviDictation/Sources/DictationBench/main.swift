@@ -37,6 +37,7 @@ let speeches = (values("--speech").first ?? "apple,parakeet")
     .split(separator: ",")
     .compactMap { DictationPipeline.Speech(rawValue: String($0)) }
 let save = flag("--save")
+let vocabulary = (values("--vocabulary").first ?? "").split(separator: ",").map(String.init)
 let showFailures = flag("--failures")
 let scoreFiles = values("--score")
 let engines = (values("--engines").first ?? "rules,apple")
@@ -66,6 +67,11 @@ if useAudio {
         if speech == .parakeet {
             print("Loading Parakeet (downloads about 0.5 GB the first time)…")
             try await DictationPipeline.prepareParakeet()
+            if !vocabulary.isEmpty {
+                print("Loading the vocabulary (downloads about 100 MB the first time)…")
+                let count = await DictationPipeline.setVocabulary(vocabulary)
+                print("Vocabulary: \(count) of \(vocabulary.count) terms")
+            }
         }
         print("Transcribing \(cases.count) cases with \(speech.rawValue)…")
         var heardByCase: [String: String] = [:]

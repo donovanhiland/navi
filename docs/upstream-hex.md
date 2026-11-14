@@ -27,7 +27,7 @@ features into `Packages/NaviDictation` and checks them with the benchmark.
 | Raw dictation | A second shortcut pastes the words as heard, with no processing | None |
 | Apple Intelligence | Only for meeting notes (`src/apple_intelligence.swift`), not dictation | Dictation cleanup |
 | Order of steps | Spoken formatting, spoken symbols, fillers, replacements, mode corrections, OpenCode rewrite, transforms | Fillers (rules), then Apple's model |
-| Vocabulary | Vocabulary biasing for Parakeet (`docs/features/vocabulary.md`, Labs) | None |
+| Vocabulary | Vocabulary biasing for Parakeet (`docs/features/vocabulary.md`, Labs) | One list, rescored with FluidAudio's CTC vocabulary boosting (64 terms). Navi also learns words from the clipboard history (`WordLearner.swift`); Hex has no learning |
 | Spoken punctuation, formatting | Labs, Output group (`docs/features/labs.md`) | None |
 | Live text | Words beside the HUD while you talk (Labs) | "Show Words While Talking" (on by default): one line in the pill, newest words in view. Parakeet previews the newest 10 s every 0.6 s, alongside the sentence passes; Apple speech reports partial results (`LiveText.swift`) |
 | Speech while talking | Streaming finish: a live Parakeet stream (Unified English, 1.04 s chunks) fed every 160 ms; the release only finalizes it, with the whole clip as the fallback (`docs/features/dictation.md`, Streaming Finish) | Sentence passes with Parakeet v3 (`LiveDictation.swift`): about once a second and when the user goes quiet, the audio after the last finished sentence is transcribed; finished sentences are cut at a pause in the audio and cleaned at once. The release transcribes only the rest, or reuses the newest pass |
@@ -42,9 +42,10 @@ Done: **Parakeet speech** (2026-11-07). On `say` audio, word errors went from
 20.2% (Apple Speech) to 13.2%, and speech time p50 from 66 ms to 47 ms. With
 Apple cleanup, the pass rate went from 37% to 47%.
 
-1. **Vocabulary**, for names and tech terms (the `terms` group fails today).
-2. **Spoken punctuation and formatting** (the `spoken` and `format` groups).
-3. **Transforms**, so cleanup steps are pluggable. Keep Apple's model as one step.
+Done: **Vocabulary** (2026-11-13). Not yet: Hex's "sounds like" spellings in the Settings list (the model and engine take them).
+
+1. **Spoken punctuation and formatting** (the `spoken` and `format` groups).
+2. **Transforms**, so cleanup steps are pluggable. Keep Apple's model as one step.
 
 ## How to sync
 

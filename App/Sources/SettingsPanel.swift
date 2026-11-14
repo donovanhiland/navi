@@ -158,6 +158,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private func configure() {
         model.capture = captureToggles()
         model.talkToType = talkToTypeToggles()
+        model.vocabulary = app.dictation.vocabulary
         model.permissions = permissions()
         model.historyShortcut = { [app] in app.historyShortcut.display }
         model.changeHistoryShortcut = { [weak self, app] in
@@ -219,6 +220,12 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
                 id: "showsLiveText", title: "Show Words While Talking",
                 detail: "Live words in the pill",
                 get: { dictation.showsLiveText }, set: { dictation.showsLiveText = $0 },
+                isEnabled: isOn
+            ),
+            .init(
+                id: "learnsWords", title: "Learn Words from Clipboard",
+                detail: "Names and terms you copy help Parakeet hear them",
+                get: { dictation.learnsWords }, set: { dictation.learnsWords = $0 },
                 isEnabled: isOn
             ),
         ]

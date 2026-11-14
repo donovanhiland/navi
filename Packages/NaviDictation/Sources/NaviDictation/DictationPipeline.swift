@@ -28,6 +28,12 @@ public enum DictationPipeline {
         try await ParakeetModel.shared.prepare()
     }
 
+    public static func setVocabulary(_ words: [String]) async -> Int {
+        let terms = words.compactMap(Vocabulary.cleaned).map { BoostTerm(text: $0, soundsLike: []) }
+        await ParakeetModel.shared.setVocabulary(terms)
+        return await ParakeetModel.shared.boostedTermCount
+    }
+
     public static func dictateLive(file url: URL, pause: Double = 0) async throws -> (text: String, milliseconds: Double) {
         let file = try AVAudioFile(forReading: url)
         let (stream, continuation) = AsyncStream<AudioChunk>.makeStream()

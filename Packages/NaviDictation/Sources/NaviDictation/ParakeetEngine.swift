@@ -70,17 +70,81 @@ actor ParakeetModel {
         guard let manager, !isBusy else { return nil }
         isBusy = true
         defer { endTurn() }
-        return try? await run(samples, on: manager).text
+        return try? await run(samples, on: manager, boosts: false).text
     }
 
-    private func run(_ samples: [Float], on manager: AsrManager) async throws -> (text: String, tokens: [Sentences.Token]) {
+    private func run(_ samples: [Float], on manager: AsrManager, boosts: Bool = true) async throws -> (text: String, tokens: [Sentences.Token]) {
         let layers = await manager.decoderLayerCount
         var state = TdtDecoderState.make(decoderLayers: layers)
         let result = try await manager.transcribe(samples, decoderState: &state)
-        let tokens = (result.tokenTimings ?? []).map {
+        let timings = result.tokenTimings ?? []
+        let tokens = timings.map {
             Sentences.Token(text: $0.token, start: $0.startTime, end: $0.endTime)
         }
-        return (result.text.trimmingCharacters(in: .whitespacesAndNewlines), tokens)
+        let text = boosts ? await boosted(result.text, timings: timings, samples: samples) : result.text
+        return (text.trimmingCharacters(in: .whitespacesAndNewlines), tokens)
+    }
+
+    static let boostConfig = VocabularyRescorer.Config(
+        shortTermCbwTaperPivot: 5,
+        spotterRescueMinSimilarity: 0.30,
+        spotterRescueMultiWordMinSimilarity: 0.50,
+        spotterRescueEnabled: false
+    )
+
+    private var boostTerms: [BoostTerm] = []
+    private var boosting: VocabularyBoostingSession?
+    private var ctcLoading: Task<CtcModels, any Error>?
+
+    var boostedTermCount: Int { boosting?.vocabulary.terms.count ?? 0 }
+
+    func setVocabulary(_ terms: [BoostTerm]) async {
+        guard terms != boostTerms else { return }
+        boostTerms = terms
+        guard !terms.isEmpty else {
+            boosting = nil
+            Self.logger.info("Vocabulary off: the list is empty")
+            return
+        }
+        do {
+            let models = try await ctcModels()
+            let context = CustomVocabularyContext(terms: terms.map {
+                CustomVocabularyTerm(text: $0.text, aliases: $0.soundsLike.isEmpty ? nil : $0.soundsLike)
+            })
+            let session = try await VocabularyBoostingSession(vocabulary: context, ctcModels: models, config: Self.boostConfig)
+            guard terms == boostTerms else { return }
+            boosting = session
+            Self.logger.info("Vocabulary ready: \(session.vocabulary.terms.count) of \(terms.count) terms")
+        } catch {
+            if terms == boostTerms { boostTerms = [] }
+            Self.logger.error("Vocabulary could not load: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func ctcModels() async throws -> CtcModels {
+        if let ctcLoading { return try await ctcLoading.value }
+        let task = Task { try await CtcModels.downloadAndLoad(variant: .ctc110m) }
+        ctcLoading = task
+        do {
+            return try await task.value
+        } catch {
+            ctcLoading = nil
+            throw error
+        }
+    }
+
+    private func boosted(_ text: String, timings: [TokenTiming], samples: [Float]) async -> String {
+        guard let boosting, !timings.isEmpty else { return text }
+        let start = ContinuousClock.now
+        guard let output = await boosting.rescore(text: text, tokenTimings: timings, audioSamples: samples) else {
+            return text
+        }
+        let applied = output.replacements.filter(\.shouldReplace)
+        if output.wasModified {
+            let swaps = applied.map { "\($0.originalWord) -> \($0.replacementWord ?? "")" }.joined(separator: ", ")
+            Self.logger.info("Vocabulary in \((ContinuousClock.now - start).milliseconds) ms: \(swaps, privacy: .private)")
+        }
+        return output.text
     }
 
     private func takeTurn() async {

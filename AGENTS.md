@@ -58,6 +58,28 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   size and scaled up, and the preview renders at 1600 px at most).
 
 **Talk to type and step 5 are built, not checked by Donovan yet:**
+- Vocabulary (`Vocabulary.swift`, `WordLearner.swift`, `VocabularyStore.swift`):
+  one list of names and terms Parakeet should know, like Hex's Vocabulary.
+  Each Parakeet pass is rescored with FluidAudio's `VocabularyBoostingSession`
+  (a second, CTC 110M model, about 100 MB, downloaded to
+  `~/Library/Application Support/FluidAudio/Models` only once the list has a
+  word). An empty list changes nothing. Words come from two places: Settings,
+  Vocabulary (type a word, Return), and "Learn Words from Clipboard" (on by
+  default), which reads the text items in the history 5 s after it changes
+  and keeps words that show up in at least two items and that the macOS
+  dictionary does not know: names mid-sentence, inner capitals (PyTorch,
+  macOS), and acronyms of 4+ letters. Text that looks like code, links,
+  paths, and camelCase identifiers are skipped. Parakeet gets at most 64
+  terms (Hex's cap): added words first, then the most seen learned words.
+  Up to 200 learned words are kept; a learned word that leaves the history
+  stays. Removing a learned word means it is never learned again. The list
+  is `vocabulary.json` beside `history.json`, so updates keep it and Clear
+  History does not touch it. The bench takes `--vocabulary a,b,c`.
+  Rescoring runs with FluidAudio's over-fire guards on (`ParakeetModel.boostConfig`:
+  spotter rescue off, short-term taper 5, floors 0.30/0.50). With the defaults,
+  common words turned into list words (bench word errors 8.0% to 22.1%); with
+  the guards, 8.3% with 10 terms and 7.9% with 64, and the `terms` group goes
+  from 67% to 83%.
 - `Packages/NaviDictation`: hold fn to talk, double-tap fn to lock ("Tap fn
   to Start and Stop" in Settings, off by default: one tap locks, the next press
   types), pill with a waveform and live text ("Show Words While Talking", on by

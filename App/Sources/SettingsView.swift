@@ -1,3 +1,4 @@
+import NaviDictation
 import SwiftUI
 
 @Observable
@@ -21,6 +22,7 @@ final class SettingsModel {
 
     var capture: [Toggle] = []
     var talkToType: [Toggle] = []
+    var vocabulary: VocabularyStore?
     var permissions: [Permission] = []
     var historyShortcut: @MainActor () -> String = { "" }
     var changeHistoryShortcut: @MainActor () -> Void = {}
@@ -72,6 +74,10 @@ struct SettingsView: View {
             separator
             section("Talk to Type") { toggles(model.talkToType) }
             separator
+            if let vocabulary = model.vocabulary {
+                section("Vocabulary") { VocabularyRows(store: vocabulary) }
+                separator
+            }
             section("History") { historyRows }
             separator
             section("Permissions") { permissionRows }
@@ -176,7 +182,7 @@ struct SettingsView: View {
     }
 }
 
-private struct MenuRow<Content: View>: View {
+struct MenuRow<Content: View>: View {
     var highlights = false
     var isEnabled = true
     @ViewBuilder let content: () -> Content

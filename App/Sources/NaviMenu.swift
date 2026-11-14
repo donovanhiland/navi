@@ -38,10 +38,13 @@ final class NaviMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let capture = app.capture
 
-        menu.addItem(item("All-in-One", key: "5", [.command, .shift]) { capture.captureAllInOne() })
-        menu.addItem(item("Capture Area", key: "4", [.command, .shift]) { capture.captureArea() })
+        let ownsKeys = capture.settings.useNaviScreenshotKeys == true
+        menu.addItem(item("All-in-One", key: ownsKeys ? "5" : "", [.command, .shift]) { capture.captureAllInOne() })
+        menu.addItem(item("Capture Area", key: ownsKeys ? "4" : "", [.command, .shift]) { capture.captureArea() })
         menu.addItem(item("Capture Window") { capture.captureWindow() })
-        menu.addItem(item("Capture Fullscreen", key: "3", [.command, .shift]) { capture.captureFullscreen() })
+        menu.addItem(item("Capture Fullscreen", key: ownsKeys ? "3" : "", [.command, .shift]) {
+            capture.captureFullscreen()
+        })
         menu.addItem(item("Scrolling Capture", key: "4", [.command, .shift, .option]) { capture.captureScrolling() })
         menu.addItem(item("Capture Text", key: "t", [.command, .shift, .option]) { capture.captureText() })
         let timer = NSMenuItem(title: "Self-Timer", action: nil, keyEquivalent: "")

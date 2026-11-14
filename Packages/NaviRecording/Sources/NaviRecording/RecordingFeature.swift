@@ -33,7 +33,10 @@ public final class RecordingFeature {
 
     public static var hasScreenAccess: Bool { CGPreflightScreenCaptureAccess() }
 
-    public func showRecordBar(region: RecordingRegion, onFinish: @escaping (RecordingResult) -> Void) {
+    public func showRecordBar(
+        region: RecordingRegion, options: RecordingOptions = RecordingOptions(),
+        onFinish: @escaping (RecordingResult) -> Void
+    ) {
         guard state == .idle || state == .choosing else {
             onError?(RecordingError.busy)
             return
@@ -45,7 +48,7 @@ public final class RecordingFeature {
         }
         closeBar()
         bubble.hide()
-        guard let bar = RecordBarController(region: region, options: RecordingOptions()) else {
+        guard let bar = RecordBarController(region: region, options: options) else {
             onError?(RecordingError.noDisplay)
             return
         }

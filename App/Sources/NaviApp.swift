@@ -129,7 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case let .area(id, rect): .area(id, rect)
             case let .window(id): .window(id)
             }
-            recording.showRecordBar(region: target) { [weak self] result in
+            var options = RecordingOptions()
+            options.hideDesktopIcons = capture.settings.hideDesktopIcons
+            recording.showRecordBar(region: target, options: options) { [weak self] result in
                 self?.capture.showRecording(
                     url: result.url, videoURL: result.videoURL, isGIF: result.isGIF, duration: result.duration
                 )

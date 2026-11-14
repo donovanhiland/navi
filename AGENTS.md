@@ -129,7 +129,8 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   with `activateSettings -u`) while it runs and puts it back on quit.
 - `Packages/NaviRecording`: record bar, `SCStream` → MP4 (H.264/AAC), mic and
   computer audio (mixed to one track), camera bubble, click and key overlays,
-  hide icons, mute notifications, red stop item in the menu bar, GIF, trim.
+  hide icons (starts from the Hide Desktop Icons setting), mute notifications,
+  red stop item in the menu bar, GIF, trim.
   The app wires it to the capture overlay (`CaptureFeature.onRecordRequest`)
   and to video cards (`CaptureFeature.videoTools`, `showRecording`).
 
@@ -316,7 +317,8 @@ video editor.
   titles, separators, a rounded hover highlight, and its own accent-colored
   switches (AppKit switches draw grey because Navi is never the active app).
   A click anywhere on a row flips it. Esc, ⌘W, or a click away closes it.
-- `⌥⇧⌘N` opens the Navi menu at the mouse. The same menu shows from the
+- `⌥⇧⌘N` opens the Navi menu at the mouse. The menu shows `⇧⌘3`, `⇧⌘4`, and `⇧⌘5` beside
+  their items only while Navi owns those keys. The same menu shows from the
   menu bar icon. It is an AppKit `NSStatusItem` menu, built in `NaviMenu`.
 - Clipboard history keeps every type of each copy in `<id>.pasteboard` (binary
   plist, up to 32 MB) and pastes them all back, exactly as copied. The list

@@ -1,9 +1,28 @@
 import AppKit
 import ScreenCaptureKit
 
-struct CapturedImage {
+struct CapturedImage: Sendable {
     let image: CGImage
     let scale: CGFloat
+
+    var pointSize: CGSize { image.pointSize(scale: scale) }
+    var nsImage: NSImage { image.asNSImage(pointSize: pointSize) }
+
+    func png() -> Data? { ImageOps.png(image, pointSize: pointSize) }
+}
+
+extension CGImage {
+    func pointSize(scale: CGFloat) -> CGSize {
+        CGSize(width: CGFloat(width) / scale, height: CGFloat(height) / scale)
+    }
+
+    func asNSImage(pointSize: CGSize) -> NSImage {
+        let bitmap = NSBitmapImageRep(cgImage: self)
+        bitmap.size = pointSize
+        let image = NSImage(size: pointSize)
+        image.addRepresentation(bitmap)
+        return image
+    }
 }
 
 struct OnScreenWindow {
@@ -185,10 +204,6 @@ enum ScreenGrabber {
         config.backgroundColor = .clear
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
         return CapturedImage(image: image, scale: scale)
-    }
-
-    static func onScreenWindows() -> [OnScreenWindow] {
-        onScreenWindows(primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
     }
 
     nonisolated static func onScreenWindows(primaryHeight: CGFloat) -> [OnScreenWindow] {

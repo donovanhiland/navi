@@ -29,7 +29,8 @@ struct SelectionAccuracyDemoTests {
             OnScreenWindow(id: 2, frame: hidden.offsetBy(dx: origin.x, dy: origin.y), appName: "Notes", ownerPID: 0),
         ]
         var outcome: SelectionSession.Outcome?
-        let session = SelectionSession(screens: [screen], mode: .area, windows: windows) { outcome = $0 }
+        let session = SelectionSession(screens: [screen], mode: .area) { outcome = $0 }
+        session.updateWindows(windows)
         let view = OverlayView(session: session, screen: screen)
         view.setFrameSize(Self.size)
         view.captured = CapturedImage(image: desktop, scale: Self.scale)

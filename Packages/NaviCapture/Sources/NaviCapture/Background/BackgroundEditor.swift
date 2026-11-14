@@ -191,7 +191,9 @@ final class BackgroundEditor: NSObject, NSWindowDelegate {
         self.window = window
     }
 
-    func show() {
+    func show() { focus() }
+
+    func focus() {
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
     }

@@ -4,20 +4,13 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AnnotateEditor: NSObject, NSWindowDelegate {
-    struct Result {
-        let flat: CGImage
-        let base: CGImage
-        let document: AnnotationDocument
-        let pointSize: CGSize
-    }
-
     private let model: AnnotateModel
     private var window: NSWindow?
     private var keyMonitor: Any?
-    private let onDone: (Result) -> Void
+    private let onDone: (MarkupResult) -> Void
     private let onClose: () -> Void
 
-    init(base: CGImage, document: AnnotationDocument, scale: CGFloat, onDone: @escaping (Result) -> Void, onClose: @escaping () -> Void) {
+    init(base: CGImage, document: AnnotationDocument, scale: CGFloat, onDone: @escaping (MarkupResult) -> Void, onClose: @escaping () -> Void) {
         model = AnnotateModel(base: base, document: document, scale: scale)
         self.onDone = onDone
         self.onClose = onClose
@@ -46,13 +39,17 @@ final class AnnotateEditor: NSObject, NSWindowDelegate {
         window.center()
         self.window = window
         watchKeys()
+        focus()
+    }
+
+    func focus() {
         NSApp.activate()
-        window.makeKeyAndOrderFront(nil)
+        window?.makeKeyAndOrderFront(nil)
     }
 
     private func finish() {
         guard let flat = model.flatten() else { return }
-        onDone(Result(flat: flat, base: model.base, document: model.document, pointSize: model.pointSize))
+        onDone(MarkupResult(flat: flat, base: model.base, document: model.document, pointSize: model.pointSize))
         window?.close()
     }
 
@@ -262,16 +259,6 @@ struct AnnotateToolbar: View {
                 return provider
             }
             .tooltip(Tip(title: "Drag into any app"))
-    }
-
-    private var colorBinding: Binding<Color> {
-        Binding(
-            get: { Color(.sRGB, red: model.color.red, green: model.color.green, blue: model.color.blue) },
-            set: { color in
-                guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
-                model.color = RGBA(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent)
-            }
-        )
     }
 }
 

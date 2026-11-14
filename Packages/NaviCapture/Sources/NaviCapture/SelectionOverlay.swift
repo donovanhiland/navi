@@ -34,15 +34,14 @@ final class SelectionSession {
     private weak var heldOverlay: OverlayView?
     var hasHeldSelection: Bool { heldOverlay != nil }
     private var modeBar: ModeBarPanel?
-    private(set) var windows: [OnScreenWindow]
+    private(set) var windows: [OnScreenWindow] = []
     private var overlays: [OverlayWindow] = []
     private var keyMonitor: Any?
     private var sessionKeys: [HotKey] = []
     private var completion: ((Outcome) -> Void)?
 
-    init(screens: [NSScreen], mode: Mode, windows: [OnScreenWindow], completion: @escaping (Outcome) -> Void) {
+    init(screens: [NSScreen], mode: Mode, completion: @escaping (Outcome) -> Void) {
         self.mode = mode
-        self.windows = windows
         self.completion = completion
         overlays = screens.map { screen in
             OverlayWindow(screen: screen, view: OverlayView(session: nil, screen: screen))

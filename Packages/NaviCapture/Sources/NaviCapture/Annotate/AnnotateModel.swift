@@ -466,11 +466,19 @@ final class AnnotateModel {
 }
 
 enum MarkupStore {
+    static func encodeBase(_ base: CGImage) -> Data? {
+        ImageOps.png(base, pointSize: CGSize(width: base.width, height: base.height))
+    }
+
     static func save(base: CGImage, document: AnnotationDocument, to folder: URL) throws {
+        try save(basePNG: encodeBase(base), document: document, to: folder)
+    }
+
+    static func save(basePNG: Data?, document: AnnotationDocument, to folder: URL) throws {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try JSONEncoder().encode(document).write(to: folder.appending(path: "document.json"), options: .atomic)
-        guard let png = ImageOps.png(base, pointSize: CGSize(width: base.width, height: base.height)) else { return }
-        try png.write(to: folder.appending(path: "base.png"), options: .atomic)
+        guard let basePNG else { return }
+        try basePNG.write(to: folder.appending(path: "base.png"), options: .atomic)
     }
 
     static func load(from folder: URL) -> (CGImage, AnnotationDocument)? {

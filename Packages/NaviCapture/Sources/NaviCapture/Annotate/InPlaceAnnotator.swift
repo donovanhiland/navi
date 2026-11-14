@@ -19,11 +19,11 @@ final class InPlaceAnnotator {
     private var activeObserver: NSObjectProtocol?
     private var fallbackKeys: [HotKey] = []
     private var colorPanelLevel: NSWindow.Level?
-    private var onFinish: (((Action, AnnotateEditor.Result)?) -> Void)?
+    private var onFinish: (((Action, MarkupResult)?) -> Void)?
 
     init(
         captured: CapturedImage, backdrop: CGImage?, screen: NSScreen, area: CGRect, reframes: Bool = true,
-        onFinish: @escaping ((Action, AnnotateEditor.Result)?) -> Void
+        onFinish: @escaping ((Action, MarkupResult)?) -> Void
     ) {
         let source = CGRect(
             x: (area.minX * captured.scale).rounded(), y: (area.minY * captured.scale).rounded(),
@@ -129,7 +129,7 @@ final class InPlaceAnnotator {
             onFinish(nil)
             return
         }
-        onFinish((action, AnnotateEditor.Result(flat: flat, base: model.base, document: model.document, pointSize: model.pointSize)))
+        onFinish((action, MarkupResult(flat: flat, base: model.base, document: model.document, pointSize: model.pointSize)))
     }
 
     private func watchKeys() {
@@ -143,9 +143,9 @@ final class InPlaceAnnotator {
     }
 
     private func registerFallbackKeys() {
-        let confirm: () -> Void = { [weak self] in self?.pressReturn() }
+        let confirm: () -> Void = { [weak self] in self?.confirm() }
         fallbackKeys = [
-            HotKey(keyCode: UInt32(kVK_Escape), modifiers: 0) { [weak self] in self?.pressEscape() },
+            HotKey(keyCode: UInt32(kVK_Escape), modifiers: 0) { [weak self] in self?.cancel() },
             HotKey(keyCode: UInt32(kVK_Return), modifiers: 0, action: confirm),
             HotKey(keyCode: UInt32(kVK_ANSI_KeypadEnter), modifiers: 0, action: confirm),
         ].compactMap { $0 }
@@ -156,11 +156,11 @@ final class InPlaceAnnotator {
         fallbackKeys = []
     }
 
-    private func pressReturn() {
+    private func confirm() {
         if model.textEdit != nil { model.finishText() } else if model.cropRect != nil { model.applyCrop() } else { finish(.copy) }
     }
 
-    private func pressEscape() {
+    private func cancel() {
         if model.textEdit != nil { model.finishText() } else if model.cropRect != nil { model.cancelCrop() } else { finish(nil) }
     }
 
@@ -168,13 +168,9 @@ final class InPlaceAnnotator {
         let code = event.keyCode
         let isReturn = code == AnnotateKeys.returnKey || code == AnnotateKeys.keypadEnter
         let plain = AnnotateKeys.modifiers(of: event).isEmpty
-        if model.textEdit == nil, model.cropRect != nil, plain {
-            if isReturn { model.applyCrop(); return true }
-            if code == AnnotateKeys.escape { model.cancelCrop(); return true }
-        }
         if model.textEdit == nil, plain {
-            if isReturn { finish(.copy); return true }
-            if code == AnnotateKeys.escape { finish(nil); return true }
+            if isReturn { confirm(); return true }
+            if code == AnnotateKeys.escape { cancel(); return true }
         }
         if model.textEdit == nil, AnnotateKeys.modifiers(of: event) == .command, code == UInt16(kVK_ANSI_S) {
             finish(.save)

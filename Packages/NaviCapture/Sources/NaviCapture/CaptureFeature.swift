@@ -4,6 +4,26 @@ import NaviCore
 import ScreenCaptureKit
 import os
 
+@MainActor
+protocol OpenEditor: AnyObject {
+    func show()
+    func focus()
+}
+
+extension AnnotateEditor: OpenEditor {}
+extension BackgroundEditor: OpenEditor {}
+
+private struct EditorKey: Hashable {
+    enum Kind { case markup, background }
+    let id: UUID
+    let kind: Kind
+}
+
+private enum MarkupTarget {
+    case new(NSRunningApplication?)
+    case existing(UUID)
+}
+
 public enum CaptureRegion: Sendable {
     case display(CGDirectDisplayID)
     case area(CGDirectDisplayID, CGRect)
@@ -34,9 +54,8 @@ public final class CaptureFeature {
     private var inPlaceEditor: InPlaceAnnotator?
     private var editorStage: InPlaceAnnotator.Stage?
     private var frozenScreens: [(NSScreen, CapturedImage)] = []
-    private var editors: [UUID: AnyObject] = [:]
+    private var editors: [EditorKey: any OpenEditor] = [:]
     private var isBusy = false
-    private var copiesNextShot = false
     private let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Capture")
 
     public init(inbox: Inbox, settings: CaptureSettings = CaptureSettings()) {
@@ -77,15 +96,9 @@ public final class CaptureFeature {
 
     public func captureArea() { startSelection(.area, purpose: .screenshot) }
 
-    public func captureAreaToClipboard() {
-        copiesNextShot = true
-        startSelection(.area, purpose: .screenshot)
-    }
+    public func captureAreaToClipboard() { startSelection(.area, purpose: .screenshot, copies: true) }
 
-    public func captureFullscreenToClipboard() {
-        copiesNextShot = true
-        captureFullscreen()
-    }
+    public func captureFullscreenToClipboard() { captureFullscreen(copies: true) }
 
     public func captureWindow() { startSelection(.window, purpose: .screenshot) }
 
@@ -99,20 +112,18 @@ public final class CaptureFeature {
 
     public func pickRecordingRegion() { startSelection(.area, purpose: .record) }
 
-    public func captureFullscreen() {
-        guard begin() else {
-            copiesNextShot = false
-            return
-        }
+    public func captureFullscreen() { captureFullscreen(copies: false) }
+
+    private func captureFullscreen(copies: Bool) {
+        guard begin() else { return }
         guard let screen = NSScreen.underMouse else {
             isBusy = false
-            copiesNextShot = false
             return
         }
-        captureFullscreen(
-            on: screen, timer: 0, edits: editsInPlace(purpose: .screenshot, timer: 0),
-            sourceApp: NSWorkspace.shared.frontmostApplication, session: nil
-        )
+        shoot(ShotRequest(
+            source: .screen, screen: screen, edits: editsInPlace(purpose: .screenshot, timer: 0), copies: copies,
+            sourceApp: NSWorkspace.shared.frontmostApplication
+        ))
     }
 
     public func closeAllCards() { cards.closeAll() }
@@ -131,9 +142,10 @@ public final class CaptureFeature {
             let item: CaptureItem? = (try? Data(contentsOf: videoURL)).flatMap { data in
                 inbox.add(fileData: data, fileExtension: "mp4", kind: .recording, sourceApp: "Navi", deduplicate: false)
             }
-            let size = thumbnail.map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 320, height: 200)
-            let image = thumbnail.map { Self.image($0, pointSize: size) } ?? NSImage(size: size)
-            let png = thumbnail.flatMap { ImageOps.png($0, pointSize: size) } ?? Data()
+            let shot = thumbnail.map { CapturedImage(image: $0, scale: 1) }
+            let size = shot?.pointSize ?? CGSize(width: 320, height: 200)
+            let image = shot?.nsImage ?? NSImage(size: size)
+            let png = shot?.png() ?? Data()
             if let id = item?.id, !png.isEmpty { try? png.write(to: inbox.previewURL(for: id), options: .atomic) }
             let video = Card.VideoInfo(mp4: videoURL, gif: isGIF ? url : nil, showsGIF: isGIF, duration: duration)
             do {
@@ -163,14 +175,12 @@ public final class CaptureFeature {
     }
 
     private func startSelection(
-        _ mode: SelectionSession.Mode, purpose: SelectionSession.Purpose, modeBar: Bool = false, timer: Int = 0
+        _ mode: SelectionSession.Mode, purpose: SelectionSession.Purpose, modeBar: Bool = false, timer: Int = 0,
+        copies: Bool = false
     ) {
         if purpose == .record, onRecordRequest == nil { return }
         CaptureTiming.start("select")
-        guard begin() else {
-            copiesNextShot = false
-            return
-        }
+        guard begin() else { return }
         let freeze = PendingFreeze()
         let fastFreeze = ScreenGrabber.startFreeze(hideDesktopIcons: settings.hideDesktopIcons) { [weak self] screens in
             self?.frozeFast(screens, freeze)
@@ -178,12 +188,12 @@ public final class CaptureFeature {
         let previousApp = NSWorkspace.shared.frontmostApplication
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let listing = Task.detached(priority: .userInitiated) { ScreenGrabber.onScreenWindows(primaryHeight: primaryHeight) }
-        let session = SelectionSession(screens: NSScreen.screens, mode: mode, windows: []) { [weak self] outcome in
+        let session = SelectionSession(screens: NSScreen.screens, mode: mode) { [weak self] outcome in
             guard let self else { return }
             let session = self.session
             selectionEnded(
                 outcome, purpose: session?.purpose ?? purpose, timer: session?.timer ?? timer,
-                previousApp: previousApp, session: session
+                previousApp: previousApp, copies: copies, session: session
             )
         }
         Task { [weak session] in
@@ -251,31 +261,44 @@ public final class CaptureFeature {
 
     private func selectionEnded(
         _ outcome: SelectionSession.Outcome, purpose: SelectionSession.Purpose, timer: Int,
-        previousApp: NSRunningApplication?, session ending: SelectionSession?
+        previousApp: NSRunningApplication?, copies: Bool, session ending: SelectionSession?
     ) {
         CaptureTiming.mark("shot", "selection ended")
         session = nil
         prepareAhead(after: 1)
         let frozen = frozenScreens
         frozenScreens = []
+        let backdrop = { (screen: NSScreen) in frozen.first { $0.0 == screen }?.1.image }
         if editsInPlace(purpose: purpose, timer: timer) {
             switch outcome {
             case let .area(captured, screen, rect):
-                let backdrop = frozen.first { $0.0 == screen }?.1.image
-                editInPlace(captured, backdrop: backdrop, on: screen, rect: rect, sourceApp: previousApp)
+                shoot(ShotRequest(
+                    source: .frozen(captured, rect: rect), screen: screen, edits: true, backdrop: backdrop(screen),
+                    copies: copies, sourceApp: previousApp
+                ))
                 return
             case let .window(id, screen):
                 ending?.holdOverlay()
-                let backdrop = frozen.first { $0.0 == screen }?.1.image
+                previousApp?.activate()
                 let frame = ending?.windows.first { $0.id == id }?.frame
-                editWindow(id, frame: frame, backdrop: backdrop, on: screen, sourceApp: previousApp, session: ending)
+                shoot(ShotRequest(
+                    source: .window(id, frame: frame), screen: screen, edits: true, backdrop: backdrop(screen),
+                    copies: copies, sourceApp: previousApp, session: ending
+                ))
                 return
             case let .fullscreen(screen):
                 if let shot = frozen.first(where: { $0.0 == screen })?.1 {
-                    editFullscreen(shot, on: screen, sourceApp: previousApp)
+                    let whole = CGRect(origin: .zero, size: screen.frame.size)
+                    shoot(ShotRequest(
+                        source: .frozen(shot, rect: whole), screen: screen, edits: true, backdrop: shot.image,
+                        copies: copies, sourceApp: previousApp
+                    ))
                 } else {
                     ending?.holdOverlay()
-                    captureFullscreen(on: screen, timer: 0, edits: true, sourceApp: previousApp, session: ending)
+                    shoot(ShotRequest(
+                        source: .screen, screen: screen, edits: true, copies: copies, sourceApp: previousApp,
+                        session: ending
+                    ))
                 }
                 return
             case .cancelled:
@@ -286,13 +309,12 @@ public final class CaptureFeature {
         switch (outcome, purpose) {
         case (.cancelled, _):
             isBusy = false
-            copiesNextShot = false
 
         case let (.fullscreen(screen), .record):
             isBusy = false
             if let id = screen.displayID { onRecordRequest?(.display(id)) }
         case let (.fullscreen(screen), _):
-            captureFullscreen(on: screen, timer: timer, edits: false, sourceApp: previousApp, session: nil)
+            shoot(ShotRequest(source: .screen, screen: screen, timer: timer, copies: copies, sourceApp: previousApp))
 
         case let (.area(_, screen, rect), .record):
             isBusy = false
@@ -306,39 +328,18 @@ public final class CaptureFeature {
             Task { await copyText(captured.image, on: screen) }
 
         case let (.area(_, screen, rect), .scroll):
-            startScrolling(on: screen, rect: rect, sourceApp: previousApp)
+            startScrolling(on: screen, rect: rect, copies: copies, sourceApp: previousApp)
 
         case let (.area(captured, screen, rect), .screenshot):
-            guard timer > 0 else {
-                isBusy = false
-                deliver(captured, on: screen, sourceApp: previousApp)
-                return
-            }
-            Task {
-                defer { isBusy = false }
-                await Countdown.run(seconds: timer, on: screen)
-                do {
-                    let live = try await ScreenGrabber.capture(screen, rect: rect, hideDesktopIcons: settings.hideDesktopIcons)
-                    deliver(live, on: screen, sourceApp: previousApp)
-                } catch {
-                    logger.error("Timer capture failed: \(error.localizedDescription)")
-                    copiesNextShot = false
-                }
-            }
+            shoot(ShotRequest(
+                source: timer > 0 ? .rect(rect) : .frozen(captured, rect: rect), screen: screen, timer: timer,
+                copies: copies, sourceApp: previousApp
+            ))
 
         case let (.window(id, screen), _):
-            Task {
-                defer { isBusy = false }
-                await Self.waitUntilActive(previousApp)
-                await Countdown.run(seconds: timer, on: screen)
-                do {
-                    let captured = try await ScreenGrabber.captureWindow(id: id)
-                    deliver(captured, on: screen, sourceApp: previousApp)
-                } catch {
-                    logger.error("Window capture failed: \(error.localizedDescription)")
-                    copiesNextShot = false
-                }
-            }
+            shoot(ShotRequest(
+                source: .window(id, frame: nil), screen: screen, timer: timer, copies: copies, sourceApp: previousApp
+            ))
         }
     }
 
@@ -350,69 +351,52 @@ public final class CaptureFeature {
         }
     }
 
-    private func captureFullscreen(
-        on screen: NSScreen, timer: Int, edits: Bool, sourceApp: NSRunningApplication?, session: SelectionSession?
-    ) {
+    private func shoot(_ request: ShotRequest) {
+        if case let .frozen(captured, _) = request.source {
+            route(captured, request)
+            return
+        }
         Task {
-            let watchdog = Self.releaseLater(session)
+            let watchdog = request.session.map(Self.releaseLater)
             defer {
-                watchdog.cancel()
-                session?.releaseOverlay()
+                watchdog?.cancel()
+                request.session?.releaseOverlay()
             }
-            await Countdown.run(seconds: timer, on: screen)
-            let captured: CapturedImage
+            if request.source.waitsForApp { await Self.waitUntilActive(request.sourceApp) }
+            await Countdown.run(seconds: request.timer, on: request.screen)
             do {
-                captured = try await ScreenGrabber.capture(screen, hideDesktopIcons: settings.hideDesktopIcons)
+                route(try await grab(request), request)
             } catch {
-                logger.error("Fullscreen capture failed: \(error.localizedDescription)")
+                logger.error("\(request.source.failureLabel): \(error.localizedDescription)")
                 endWithoutShot()
-                return
             }
-            guard edits else {
-                isBusy = false
-                ScreenFlash.show(captured, on: screen)
-                deliver(captured, on: screen, sourceApp: sourceApp)
-                return
-            }
-            editFullscreen(captured, on: screen, sourceApp: sourceApp)
         }
     }
 
-    private func editFullscreen(_ captured: CapturedImage, on screen: NSScreen, sourceApp: NSRunningApplication?) {
-        let whole = CGRect(origin: .zero, size: screen.frame.size)
-        editInPlace(captured, backdrop: captured.image, on: screen, rect: whole, sourceApp: sourceApp)
+    private func grab(_ request: ShotRequest) async throws -> CapturedImage {
+        let hideIcons = settings.hideDesktopIcons
+        switch request.source {
+        case let .frozen(captured, _): return captured
+        case .screen: return try await ScreenGrabber.capture(request.screen, hideDesktopIcons: hideIcons)
+        case let .rect(rect): return try await ScreenGrabber.capture(request.screen, rect: rect, hideDesktopIcons: hideIcons)
+        case let .window(id, _): return try await ScreenGrabber.captureWindow(id: id)
+        }
     }
 
-    private func editWindow(
-        _ id: CGWindowID, frame: CGRect?, backdrop: CGImage?, on screen: NSScreen,
-        sourceApp: NSRunningApplication?, session: SelectionSession?
-    ) {
-        sourceApp?.activate()
-        Task {
-            let watchdog = Self.releaseLater(session)
-            defer {
-                watchdog.cancel()
-                session?.releaseOverlay()
-            }
-            await Self.waitUntilActive(sourceApp)
-            let captured: CapturedImage
-            do {
-                captured = try await ScreenGrabber.captureWindow(id: id)
-            } catch {
-                logger.error("Window capture failed: \(error.localizedDescription)")
-                endWithoutShot()
-                return
-            }
-            let size = CGSize(
-                width: CGFloat(captured.image.width) / captured.scale, height: CGFloat(captured.image.height) / captured.scale
-            )
-            let window = frame ?? CGRect(
-                x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2,
-                width: size.width, height: size.height
-            )
-            let area = CaptureGeometry.windowArea(window: window, imageSize: size, screen: screen.frame, scale: captured.scale)
-            editInPlace(captured, backdrop: backdrop, on: screen, rect: area, reframes: false, sourceApp: sourceApp)
+    private func route(_ captured: CapturedImage, _ request: ShotRequest) {
+        guard request.edits else {
+            isBusy = false
+            if request.source.flashes { ScreenFlash.show(captured, on: request.screen) }
+            deliver(captured, on: request.screen, sourceApp: request.sourceApp, copies: request.copies)
+            return
         }
+        let area = request.source.editArea(
+            imageSize: captured.pointSize, screenFrame: request.screen.frame, scale: captured.scale
+        )
+        editInPlace(
+            captured, backdrop: request.source.usesOwnBackdrop ? captured.image : request.backdrop,
+            on: request.screen, rect: area, reframes: request.source.reframes, sourceApp: request.sourceApp
+        )
     }
 
     private static func releaseLater(_ session: SelectionSession?) -> Task<Void, Never> {
@@ -424,16 +408,17 @@ public final class CaptureFeature {
 
     private func endWithoutShot() {
         isBusy = false
-        copiesNextShot = false
     }
 
-    private func startScrolling(on screen: NSScreen, rect: CGRect, sourceApp: NSRunningApplication?) {
+    private func startScrolling(on screen: NSScreen, rect: CGRect, copies: Bool, sourceApp: NSRunningApplication?) {
         let scroll = ScrollCaptureSession(screen: screen, rect: rect, hideDesktopIcons: settings.hideDesktopIcons) {
             [weak self] image, scale in
             guard let self else { return }
             scrollSession = nil
             isBusy = false
-            if let image { deliver(CapturedImage(image: image, scale: scale), on: screen, sourceApp: sourceApp) }
+            if let image {
+                deliver(CapturedImage(image: image, scale: scale), on: screen, sourceApp: sourceApp, copies: copies)
+            }
         }
         scrollSession = scroll
         scroll.begin()
@@ -453,8 +438,6 @@ public final class CaptureFeature {
             sourceApp?.activate()
             if let (action, result) = result {
                 deliverEdited(result, action: action, on: screen, sourceApp: sourceApp)
-            } else {
-                copiesNextShot = false
             }
         }
         inPlaceEditor = editor
@@ -464,66 +447,64 @@ public final class CaptureFeature {
     }
 
     private func deliverEdited(
-        _ result: AnnotateEditor.Result, action: InPlaceAnnotator.Action, on screen: NSScreen, sourceApp: NSRunningApplication?
+        _ result: MarkupResult, action: InPlaceAnnotator.Action, on screen: NSScreen, sourceApp: NSRunningApplication?
     ) {
-        copiesNextShot = false
-        let image = Self.image(result.flat, pointSize: result.pointSize)
         if action == .copy {
-            NaviPasteboard.write(image: image)
+            NaviPasteboard.write(image: result.flatImage)
             Toast.show("Copied", on: screen)
         }
-        guard let png = ImageOps.png(result.flat, pointSize: result.pointSize) else {
-            logger.error("Could not encode the edited capture as PNG")
-            return
-        }
-        let item = inbox.add(
-            fileData: png, fileExtension: "png", kind: .screenshot,
-            sourceApp: sourceApp?.localizedName, sourceBundleID: sourceApp?.bundleIdentifier, deduplicate: false
-        )
-        if let id = item?.id {
-            do {
-                try MarkupStore.save(base: result.base, document: result.document, to: inbox.markupURL(for: id))
-            } catch {
-                logger.error("Could not save the markup: \(error.localizedDescription)")
+        let createdAt = Date.now
+        Task {
+            let encoding = Task.detached(priority: .userInitiated) { result.encoded() }
+            guard let encoded = await encoding.value else {
+                logger.error("Could not encode the edited capture as PNG")
+                return
             }
-        }
-        switch action {
-        case .copy:
-            break
-        case .save:
-            let createdAt = Date.now
-            let folder = settings.saveFolder
-            let url = CaptureGeometry.uniqueURL(
-                in: folder, name: CaptureGeometry.fileName(for: createdAt, fileExtension: "png")
-            ) { FileManager.default.fileExists(atPath: $0.path) }
-            do {
-                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                try png.write(to: url, options: .atomic)
-                Toast.show("Saved to \(folder.lastPathComponent)", on: screen)
-            } catch {
-                logger.error("Could not save the capture: \(error.localizedDescription)")
-                NSSound.beep()
+            storeMarkup(result, encoded, target: .new(sourceApp))
+            switch action {
+            case .copy:
+                break
+            case .save:
+                let written = saveToFolder(createdAt: createdAt, fileExtension: "png") {
+                    try encoded.flat.write(to: $0, options: .atomic)
+                }
+                if written != nil { Toast.show("Saved to \(settings.saveFolder.lastPathComponent)", on: screen) }
+            case .stash:
+                Toast.show("Stashed. ⇧⌘V to find it", on: screen)
             }
-        case .stash:
-            Toast.show("Stashed. ⇧⌘V to find it", on: screen)
         }
     }
 
-    private func deliver(_ captured: CapturedImage, on screen: NSScreen, sourceApp: NSRunningApplication?) {
-        let pointSize = CGSize(
-            width: CGFloat(captured.image.width) / captured.scale,
-            height: CGFloat(captured.image.height) / captured.scale
-        )
-        let started = ContinuousClock.now
-        let image = captured.image
-        let encoding = Task.detached(priority: .userInitiated) {
-            ImageOps.png(image, pointSize: pointSize)
+    @discardableResult
+    private func storeMarkup(_ result: MarkupResult, _ encoded: EncodedMarkup, target: MarkupTarget) -> UUID? {
+        let id: UUID?
+        switch target {
+        case let .new(sourceApp):
+            id = inbox.add(
+                fileData: encoded.flat, fileExtension: "png", kind: .screenshot,
+                sourceApp: sourceApp?.localizedName, sourceBundleID: sourceApp?.bundleIdentifier, deduplicate: false
+            )?.id
+        case let .existing(existing):
+            inbox.updateFile(existing, data: encoded.flat)
+            id = existing
         }
-        let copies = copiesNextShot || settings.copyToClipboard
-        copiesNextShot = false
+        guard let id else { return nil }
+        do {
+            try MarkupStore.save(basePNG: encoded.base, document: result.document, to: inbox.markupURL(for: id))
+        } catch {
+            logger.error("Could not save the markup: \(error.localizedDescription)")
+        }
+        return id
+    }
+
+    private func deliver(_ captured: CapturedImage, on screen: NSScreen, sourceApp: NSRunningApplication?, copies forced: Bool) {
+        let started = ContinuousClock.now
+        let encoding = Task.detached(priority: .userInitiated) { captured.png() }
+        let copies = forced || settings.copyToClipboard
         Task {
             let encoded = await encoding.value
-            defer { if copies { NaviPasteboard.write(image: Self.image(image, pointSize: pointSize)) } }
+            let image = captured.nsImage
+            defer { if copies { NaviPasteboard.write(image: image) } }
             guard let png = encoded else {
                 logger.error("Could not encode the capture as PNG")
                 return
@@ -533,7 +514,7 @@ public final class CaptureFeature {
                 sourceApp: sourceApp?.localizedName, sourceBundleID: sourceApp?.bundleIdentifier, deduplicate: false
             )
             do {
-                let card = try Card(inboxID: item?.id, image: Self.image(image, pointSize: pointSize), png: png, createdAt: .now)
+                let card = try Card(inboxID: item?.id, image: image, png: png, createdAt: .now)
                 cards.show(card, on: screen)
                 CaptureTiming.markOnScreen("shot", "card shown")
             } catch {
@@ -542,14 +523,6 @@ public final class CaptureFeature {
             let elapsed = ContinuousClock.now - started
             logger.info("Capture to card: \(Int(elapsed / .milliseconds(1))) ms")
         }
-    }
-
-    private static func image(_ cgImage: CGImage, pointSize: CGSize) -> NSImage {
-        let bitmap = NSBitmapImageRep(cgImage: cgImage)
-        bitmap.size = pointSize
-        let image = NSImage(size: pointSize)
-        image.addRepresentation(bitmap)
-        return image
     }
 
     private func copy(_ card: Card) {
@@ -571,20 +544,27 @@ public final class CaptureFeature {
             if thenClose { cards.close(card) }
             return saved
         }
+        guard let url = saveToFolder(createdAt: card.createdAt, fileExtension: card.fileExtension, write: {
+            try FileManager.default.copyItem(at: card.dragURL, to: $0)
+        }) else { return nil }
+        card.savedURL = url
+        if thenClose { cards.close(card) }
+        return url
+    }
+
+    private func saveToFolder(createdAt: Date, fileExtension: String, write: (URL) throws -> Void) -> URL? {
         let folder = settings.saveFolder
         let url = CaptureGeometry.uniqueURL(
-            in: folder, name: CaptureGeometry.fileName(for: card.createdAt, fileExtension: card.fileExtension)
+            in: folder, name: CaptureGeometry.fileName(for: createdAt, fileExtension: fileExtension)
         ) { FileManager.default.fileExists(atPath: $0.path) }
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: card.dragURL, to: url)
+            try write(url)
         } catch {
             logger.error("Could not save the capture: \(error.localizedDescription)")
             NSSound.beep()
             return nil
         }
-        card.savedURL = url
-        if thenClose { cards.close(card) }
         return url
     }
 
@@ -602,60 +582,57 @@ public final class CaptureFeature {
               let bitmap = NSBitmapImageRep(data: data), let flat = bitmap.cgImage
         else { return }
         let scale = bitmap.size.width > 0 ? CGFloat(bitmap.pixelsWide) / bitmap.size.width : 1
-        var base = flat
-        var document = AnnotationDocument()
-        if let saved = MarkupStore.load(from: inbox.markupURL(for: id)) { (base, document) = saved }
-        let token = UUID()
-        let editor = AnnotateEditor(base: base, document: document, scale: scale) { [weak self] result in
-            self?.applyMarkup(result, toInboxID: id)
-        } onClose: { [weak self] in
-            self?.editors[token] = nil
-        }
-        editors[token] = editor
-        editor.show()
-    }
-
-    private func applyMarkup(_ result: AnnotateEditor.Result, toInboxID id: UUID) {
-        guard let png = ImageOps.png(result.flat, pointSize: result.pointSize) else { return }
-        if settings.copyToClipboard { NaviPasteboard.write(image: Self.image(result.flat, pointSize: result.pointSize)) }
-        inbox.updateFile(id, data: png)
-        do {
-            try MarkupStore.save(base: result.base, document: result.document, to: inbox.markupURL(for: id))
-        } catch {
-            logger.error("Could not save the markup: \(error.localizedDescription)")
+        openMarkup(key: id, flat: flat, flatData: data, scale: scale, inboxID: id) { [weak self] in
+            self?.applyMarkup($0, toInboxID: id)
         }
     }
 
     private func annotate(_ card: Card) {
-        guard let current = card.cgImage else { return }
-        var base = current
-        var document = AnnotationDocument()
-        if let id = card.inboxID, inbox.fileData(for: id) == card.png,
-           let saved = MarkupStore.load(from: inbox.markupURL(for: id)) {
-            (base, document) = saved
+        guard let flat = card.cgImage else { return }
+        openMarkup(key: card.inboxID ?? card.id, flat: flat, flatData: card.png, scale: card.scale, inboxID: card.inboxID) {
+            [weak self] in
+            self?.applyMarkup($0, to: card)
         }
-        let token = UUID()
-        let editor = AnnotateEditor(base: base, document: document, scale: card.scale) { [weak self] result in
-            self?.applyMarkup(result, to: card)
-        } onClose: { [weak self] in
-            self?.editors[token] = nil
+    }
+
+    private func openMarkup(
+        key: UUID, flat: CGImage, flatData: Data, scale: CGFloat, inboxID: UUID?,
+        onDone: @escaping (MarkupResult) -> Void
+    ) {
+        present(EditorKey(id: key, kind: .markup)) { onClose in
+            var base = flat
+            var document = AnnotationDocument()
+            if let id = inboxID, inbox.fileData(for: id) == flatData,
+               let saved = MarkupStore.load(from: inbox.markupURL(for: id)) {
+                (base, document) = saved
+            }
+            return AnnotateEditor(base: base, document: document, scale: scale, onDone: onDone, onClose: onClose)
         }
-        editors[token] = editor
+    }
+
+    private func present(_ key: EditorKey, make: (_ onClose: @escaping () -> Void) -> any OpenEditor) {
+        if let open = editors[key] {
+            open.focus()
+            return
+        }
+        let editor = make { [weak self] in self?.editors[key] = nil }
+        editors[key] = editor
         editor.show()
     }
 
-    private func applyMarkup(_ result: AnnotateEditor.Result, to card: Card) {
-        guard let png = ImageOps.png(result.flat, pointSize: result.pointSize) else { return }
-        let image = Self.image(result.flat, pointSize: result.pointSize)
-        card.update(image: image, png: png)
+    private func applyMarkup(_ result: MarkupResult, toInboxID id: UUID) {
+        guard let encoded = result.encoded() else { return }
+        if settings.copyToClipboard { NaviPasteboard.write(image: result.flatImage) }
+        storeMarkup(result, encoded, target: .existing(id))
+    }
+
+    private func applyMarkup(_ result: MarkupResult, to card: Card) {
+        guard let encoded = result.encoded() else { return }
+        let image = result.flatImage
+        card.update(image: image, png: encoded.flat)
         if settings.copyToClipboard { NaviPasteboard.write(image: image) }
         guard let id = card.inboxID else { return }
-        inbox.updateFile(id, data: png)
-        do {
-            try MarkupStore.save(base: result.base, document: result.document, to: inbox.markupURL(for: id))
-        } catch {
-            logger.error("Could not save the markup: \(error.localizedDescription)")
-        }
+        storeMarkup(result, encoded, target: .existing(id))
     }
 
     private func trim(_ card: Card) {
@@ -720,20 +697,17 @@ public final class CaptureFeature {
     private func openBackground(_ card: Card) {
         guard let image = card.cgImage else { return }
         let scale = card.scale
-        let token = UUID()
-        let editor = BackgroundEditor(image: image, scale: scale) { [weak self] result in
-            guard let self else { return }
-            let pointSize = CGSize(width: CGFloat(result.width) / scale, height: CGFloat(result.height) / scale)
-            guard let png = ImageOps.png(result, pointSize: pointSize) else { return }
-            card.update(image: Self.image(result, pointSize: pointSize), png: png)
-            if let id = card.inboxID {
-                inbox.updateFile(id, data: png)
-                try? FileManager.default.removeItem(at: inbox.markupURL(for: id))
-            }
-        } onClose: { [weak self] in
-            self?.editors[token] = nil
+        present(EditorKey(id: card.inboxID ?? card.id, kind: .background)) { onClose in
+            BackgroundEditor(image: image, scale: scale, onApply: { [weak self] result in
+                guard let self else { return }
+                let shot = CapturedImage(image: result, scale: scale)
+                guard let png = shot.png() else { return }
+                card.update(image: shot.nsImage, png: png)
+                if let id = card.inboxID {
+                    inbox.updateFile(id, data: png)
+                    try? FileManager.default.removeItem(at: inbox.markupURL(for: id))
+                }
+            }, onClose: onClose)
         }
-        editors[token] = editor
-        editor.show()
     }
 }

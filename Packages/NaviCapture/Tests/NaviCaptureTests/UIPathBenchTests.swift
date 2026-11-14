@@ -26,10 +26,12 @@ struct UIPathBench {
         _ = NSApplication.shared
         let screen = NSScreen.screens[0]
         let frozen = SpeedBench.screen(width: Int(screen.frame.width * screen.backingScaleFactor), height: Int(screen.frame.height * screen.backingScaleFactor))
-        let windows = ScreenGrabber.onScreenWindows()
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let windows = ScreenGrabber.onScreenWindows(primaryHeight: primaryHeight)
         var sessions: [SelectionSession] = []
         _ = SpeedBench.time("select-open-to-drawn", iterations: 12) {
-            let session = SelectionSession(screens: NSScreen.screens, mode: .area, windows: windows) { _ in }
+            let session = SelectionSession(screens: NSScreen.screens, mode: .area) { _ in }
+            session.updateWindows(windows)
             session.begin()
             Self.flush(Self.overlayWindows())
             sessions.append(session)
@@ -37,10 +39,11 @@ struct UIPathBench {
         }
         var made: SelectionSession?
         _ = SpeedBench.time("select-part-init", iterations: 12) {
-            made = SelectionSession(screens: NSScreen.screens, mode: .area, windows: windows) { _ in }
+            made = SelectionSession(screens: NSScreen.screens, mode: .area) { _ in }
+            made?.updateWindows(windows)
             made?.finish(.cancelled)
         }
-        _ = SpeedBench.time("select-part-windowlist", iterations: 12) { _ = ScreenGrabber.onScreenWindows() }
+        _ = SpeedBench.time("select-part-windowlist", iterations: 12) { _ = ScreenGrabber.onScreenWindows(primaryHeight: primaryHeight) }
         var laps: [String: [Double]] = [:]
         func lap(_ name: String, _ start: inout ContinuousClock.Instant) {
             let d = ContinuousClock.now - start
@@ -49,7 +52,8 @@ struct UIPathBench {
         }
         for _ in 0 ..< 12 {
             var t = ContinuousClock.now
-            let session = SelectionSession(screens: NSScreen.screens, mode: .area, windows: windows) { _ in }
+            let session = SelectionSession(screens: NSScreen.screens, mode: .area) { _ in }
+            session.updateWindows(windows)
             lap("init", &t)
             session.begin()
             lap("begin", &t)
@@ -66,21 +70,24 @@ struct UIPathBench {
         var pending: SelectionSession?
         _ = SpeedBench.time("select-part-begin", iterations: 12) {
             pending?.finish(.cancelled)
-            pending = SelectionSession(screens: NSScreen.screens, mode: .area, windows: windows) { _ in }
+            pending = SelectionSession(screens: NSScreen.screens, mode: .area) { _ in }
+            pending?.updateWindows(windows)
             let start = ContinuousClock.now
             pending?.begin()
             _ = start
         }
         pending?.finish(.cancelled)
         _ = SpeedBench.time("select-freeze-swap", iterations: 12) {
-            let session = SelectionSession(screens: NSScreen.screens, mode: .area, windows: windows) { _ in }
+            let session = SelectionSession(screens: NSScreen.screens, mode: .area) { _ in }
+            session.updateWindows(windows)
             session.begin()
             Self.flush(Self.overlayWindows())
             session.freeze([(screen, CapturedImage(image: frozen, scale: screen.backingScaleFactor))])
             Self.flush(Self.overlayWindows())
             session.finish(.cancelled)
         }
-        let session = SelectionSession(screens: [screen], mode: .area, windows: windows) { _ in }
+        let session = SelectionSession(screens: [screen], mode: .area) { _ in }
+        session.updateWindows(windows)
         session.begin()
         session.freeze([(screen, CapturedImage(image: frozen, scale: screen.backingScaleFactor))])
         let window = try #require(Self.overlayWindows().first as? OverlayWindow)

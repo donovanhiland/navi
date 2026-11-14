@@ -32,7 +32,8 @@ struct WindowSpotlightTests {
             )
         }
         var result: SelectionSession.Outcome?
-        let session = SelectionSession(screens: [screen], mode: .area, windows: onScreen) { result = $0 }
+        let session = SelectionSession(screens: [screen], mode: .area) { result = $0 }
+        session.updateWindows(onScreen)
         let view = OverlayView(session: session, screen: screen)
         view.setFrameSize(Self.size)
         view.dimView.setFrameSize(Self.size)

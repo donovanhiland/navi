@@ -78,13 +78,6 @@ public enum AnnotationTool: String, CaseIterable, Codable, Sendable {
         default: title
         }
     }
-
-    var dragsShape: Bool {
-        switch self {
-        case .select, .text, .counter, .crop: false
-        default: true
-        }
-    }
 }
 
 public struct RGBA: Codable, Hashable, Sendable {

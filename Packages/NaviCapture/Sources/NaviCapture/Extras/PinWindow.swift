@@ -5,7 +5,6 @@ import SwiftUI
 final class PinBoard {
     private var pins: [PinPanel] = []
 
-    var hasLockedPins: Bool { pins.contains { $0.isLocked } }
     var isEmpty: Bool { pins.isEmpty }
 
     func pin(_ image: NSImage, near screen: NSScreen?) {

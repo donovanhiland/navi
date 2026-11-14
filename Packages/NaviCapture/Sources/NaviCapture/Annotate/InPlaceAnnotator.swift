@@ -22,14 +22,14 @@ final class InPlaceAnnotator {
     private var onFinish: (((Action, AnnotateEditor.Result)?) -> Void)?
 
     init(
-        captured: CapturedImage, backdrop: CGImage?, screen: NSScreen, area: CGRect,
+        captured: CapturedImage, backdrop: CGImage?, screen: NSScreen, area: CGRect, reframes: Bool = true,
         onFinish: @escaping ((Action, AnnotateEditor.Result)?) -> Void
     ) {
         let source = CGRect(
             x: (area.minX * captured.scale).rounded(), y: (area.minY * captured.scale).rounded(),
             width: CGFloat(captured.image.width), height: CGFloat(captured.image.height)
         )
-        let placement = ScreenPlacement(origin: area.origin, source: backdrop == nil ? nil : source, scale: captured.scale)
+        let placement = ScreenPlacement(origin: area.origin, source: backdrop == nil || !reframes ? nil : source, scale: captured.scale)
         model = AnnotateModel(base: captured.image, scale: captured.scale, placement: placement)
         self.backdrop = backdrop
         self.screen = screen

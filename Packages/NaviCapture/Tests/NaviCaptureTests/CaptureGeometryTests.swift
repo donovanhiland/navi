@@ -183,4 +183,32 @@ import Testing
         #expect(CaptureGeometry.tipFrame(size: size, mouse: CGPoint(x: 995, y: 100), gap: 14, in: screen).maxX == 1000)
         #expect(CaptureGeometry.tipFrame(size: size, mouse: CGPoint(x: 500, y: 790), gap: 14, in: screen).minY == 756)
     }
+
+    @Test func windowAreaPutsTheShotOnTheWindow() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let window = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let plain = CaptureGeometry.windowArea(window: window, imageSize: window.size, screen: screen, scale: 2)
+        #expect(plain == CGRect(x: 100, y: 500, width: 400, height: 300))
+        let rounded = CaptureGeometry.windowArea(
+            window: window, imageSize: CGSize(width: 400.5, height: 300), screen: screen, scale: 2
+        )
+        #expect(rounded == CGRect(x: 100, y: 500, width: 400.5, height: 300))
+    }
+
+    @Test func windowAreaUsesTheScreenTheWindowIsOn() {
+        let second = CGRect(x: 1440, y: -200, width: 1920, height: 1080)
+        let window = CGRect(x: 1540, y: 0, width: 600, height: 400)
+        let area = CaptureGeometry.windowArea(window: window, imageSize: window.size, screen: second, scale: 1)
+        #expect(area == CGRect(x: 100, y: 480, width: 600, height: 400))
+    }
+
+    @Test func windowAreaLandsOnWholePixels() {
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let window = CGRect(x: 100, y: 100, width: 400, height: 300)
+        let area = CaptureGeometry.windowArea(
+            window: window.offsetBy(dx: 0.3, dy: 0.2), imageSize: window.size, screen: screen, scale: 2
+        )
+        #expect(area.minX * 2 == (area.minX * 2).rounded())
+        #expect(area.minY * 2 == (area.minY * 2).rounded())
+    }
 }

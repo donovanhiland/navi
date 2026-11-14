@@ -6,6 +6,14 @@ public enum CaptureGeometry {
         CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
     }
 
+    public static func windowArea(window: CGRect, imageSize: CGSize, screen: CGRect, scale: CGFloat) -> CGRect {
+        let snap = { (value: CGFloat) in (value * scale).rounded() / scale }
+        return CGRect(
+            x: snap(window.minX - screen.minX), y: snap(screen.maxY - window.maxY),
+            width: imageSize.width, height: imageSize.height
+        )
+    }
+
     public static func rect(from a: CGPoint, to b: CGPoint) -> CGRect {
         CGRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
     }

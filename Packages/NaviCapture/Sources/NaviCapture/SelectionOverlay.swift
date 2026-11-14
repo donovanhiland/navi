@@ -152,7 +152,9 @@ final class SelectionSession {
         }
     }
 
-    var keepsOverlayUntilDone = false
+    var editsAfterCapture = false
+
+    var keepsOverlayUntilDone: Bool { editsAfterCapture && purpose == .screenshot && timer == 0 }
 
     func hideEarly() {
         guard !keepsOverlayUntilDone else { return }
@@ -164,6 +166,7 @@ final class SelectionSession {
     }
 
     func finish(_ outcome: Outcome) {
+        guard completion != nil else { return }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
         for key in sessionKeys { key.unregister() }
@@ -183,6 +186,7 @@ final class SelectionSession {
         self.completion = nil
         let closing = overlays
         overlays = []
+        let heldModeBar = modeBar
         let close = { [modeBar] in
             for overlay in closing { overlay.orderOut(nil) }
             modeBar?.orderOut(nil)
@@ -193,11 +197,32 @@ final class SelectionSession {
             completion?(outcome)
             return
         }
-        if keepsOverlayUntilDone, case .area = outcome {
-            for overlay in closing { overlay.animationBehavior = .none }
+        guard keepsOverlayUntilDone else {
+            completion?(outcome)
+            close()
+            return
         }
+        for overlay in closing {
+            overlay.animationBehavior = .none
+            overlay.ignoresMouseEvents = true
+        }
+        heldModeBar?.orderOut(nil)
+        heldClose = close
         completion?(outcome)
-        close()
+        if !overlayHeld { releaseOverlay() }
+    }
+
+    private var heldClose: (() -> Void)?
+    private var overlayHeld = false
+
+    func holdOverlay() {
+        overlayHeld = true
+    }
+
+    func releaseOverlay() {
+        overlayHeld = false
+        heldClose?()
+        heldClose = nil
     }
 }
 

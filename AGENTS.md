@@ -174,7 +174,9 @@ video editor.
   the sync steps. Check each port with the dictation benchmark
   (`cd Packages/NaviDictation && swift run dictation-bench`).
 - **Single window capture** uses `SCContentFilter(desktopIndependentWindow:)`,
-  so nothing behind the window gets in.
+  so nothing behind the window gets in. It leaves out the window shadow
+  (`ignoreShadowsSingleWindow`): with the shadow on, ScreenCaptureKit shrinks
+  the window about 10% to fit it into the window's size.
 
 ### Capture defaults
 
@@ -251,11 +253,14 @@ video editor.
   as `Navi 2026-11-06 at 16.10.12.png`, or on the Desktop when that folder is missing.
   Navi's `capture.saveFolder` key overrides both (`CaptureSettings.saveFolder`).
 - Edit after capture (`CaptureSettings.editAfterCapture`, off by default; Settings
-  toggle "Mark Up Before Copying"): after an area shot (`⇧⌘4`, or
-  Capture in the `⇧⌘5` bar, no timer), the frozen screen stays dimmed and the
-  area becomes the markup canvas in place (`Annotate/InPlaceAnnotator.swift`),
+  toggle "Mark Up Before Copying"): after any screenshot with no timer (area,
+  a clicked window, or fullscreen; from `⇧⌘3`, `⇧⌘4`, their `⌃` copies, or the
+  `⇧⌘5` bar), the frozen screen stays dimmed and the
+  shot becomes the markup canvas in place (`Annotate/InPlaceAnnotator.swift`),
   with the toolbar floating below it (above it near the bottom, inside it when
-  it fills the screen). No window or title bar. The frame can still be
+  it fills the screen). No window or title bar. A window shot sits on the
+  window and its frame is locked; while it is taken, the dim overlay stays up.
+  For area and fullscreen shots the frame can still be
   fixed (`Annotate/FrameAdjuster.swift`): soft corner brackets sit just
   outside it; near the frame they grow, ticks show on all four edges, and a
   move tab (move icon and pixel size) fades in above the frame, apart from the

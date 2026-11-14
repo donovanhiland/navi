@@ -180,7 +180,7 @@ enum ScreenGrabber {
         config.height = Int(filter.contentRect.height * scale)
         config.captureResolution = .best
         config.showsCursor = false
-        config.ignoreShadowsSingleWindow = false
+        config.ignoreShadowsSingleWindow = true
         config.shouldBeOpaque = false
         config.backgroundColor = .clear
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)

@@ -109,7 +109,10 @@ public final class CaptureFeature {
             copiesNextShot = false
             return
         }
-        captureFullscreen(on: screen, timer: 0, sourceApp: NSWorkspace.shared.frontmostApplication)
+        captureFullscreen(
+            on: screen, timer: 0, edits: editsInPlace(purpose: .screenshot, timer: 0),
+            sourceApp: NSWorkspace.shared.frontmostApplication, session: nil
+        )
     }
 
     public func closeAllCards() { cards.closeAll() }
@@ -179,7 +182,8 @@ public final class CaptureFeature {
             guard let self else { return }
             let session = self.session
             selectionEnded(
-                outcome, purpose: session?.purpose ?? purpose, timer: session?.timer ?? timer, previousApp: previousApp
+                outcome, purpose: session?.purpose ?? purpose, timer: session?.timer ?? timer,
+                previousApp: previousApp, session: session
             )
         }
         Task { [weak session] in
@@ -191,13 +195,17 @@ public final class CaptureFeature {
         session.showsModeBar = modeBar
         session.holdsSelection = modeBar
         session.canRecord = onRecordRequest != nil
-        session.keepsOverlayUntilDone = purpose == .screenshot && timer == 0 && settings.editAfterCapture
+        session.editsAfterCapture = settings.editAfterCapture
         self.session = session
         freeze.session = session
         CaptureTiming.mark("select", "session made")
         session.begin(revealAfterFreeze: fastFreeze)
         CaptureTiming.mark("select", "overlay set up")
         if !fastFreeze { freezeSlowly(session) }
+    }
+
+    private func editsInPlace(purpose: SelectionSession.Purpose, timer: Int) -> Bool {
+        purpose == .screenshot && timer == 0 && settings.editAfterCapture
     }
 
     private func prepareAhead(after delay: TimeInterval) {
@@ -230,7 +238,7 @@ public final class CaptureFeature {
             guard let self else { return }
             do {
                 let screens = try await ScreenGrabber.captureAllScreens(hideDesktopIcons: settings.hideDesktopIcons)
-                guard let session else { return }
+                guard let session, session === self.session else { return }
                 frozenScreens = screens
                 session.freeze(screens)
                 CaptureTiming.mark("select", "frozen screen ready")
@@ -242,17 +250,37 @@ public final class CaptureFeature {
     }
 
     private func selectionEnded(
-        _ outcome: SelectionSession.Outcome, purpose: SelectionSession.Purpose, timer: Int, previousApp: NSRunningApplication?
+        _ outcome: SelectionSession.Outcome, purpose: SelectionSession.Purpose, timer: Int,
+        previousApp: NSRunningApplication?, session ending: SelectionSession?
     ) {
         CaptureTiming.mark("shot", "selection ended")
         session = nil
         prepareAhead(after: 1)
         let frozen = frozenScreens
         frozenScreens = []
-        if case let (.area(captured, screen, rect), .screenshot) = (outcome, purpose), timer == 0, settings.editAfterCapture {
-            let backdrop = frozen.first { $0.0 == screen }?.1.image
-            editInPlace(captured, backdrop: backdrop, on: screen, rect: rect, sourceApp: previousApp)
-            return
+        if editsInPlace(purpose: purpose, timer: timer) {
+            switch outcome {
+            case let .area(captured, screen, rect):
+                let backdrop = frozen.first { $0.0 == screen }?.1.image
+                editInPlace(captured, backdrop: backdrop, on: screen, rect: rect, sourceApp: previousApp)
+                return
+            case let .window(id, screen):
+                ending?.holdOverlay()
+                let backdrop = frozen.first { $0.0 == screen }?.1.image
+                let frame = ending?.windows.first { $0.id == id }?.frame
+                editWindow(id, frame: frame, backdrop: backdrop, on: screen, sourceApp: previousApp, session: ending)
+                return
+            case let .fullscreen(screen):
+                if let shot = frozen.first(where: { $0.0 == screen })?.1 {
+                    editFullscreen(shot, on: screen, sourceApp: previousApp)
+                } else {
+                    ending?.holdOverlay()
+                    captureFullscreen(on: screen, timer: 0, edits: true, sourceApp: previousApp, session: ending)
+                }
+                return
+            case .cancelled:
+                break
+            }
         }
         previousApp?.activate()
         switch (outcome, purpose) {
@@ -264,7 +292,7 @@ public final class CaptureFeature {
             isBusy = false
             if let id = screen.displayID { onRecordRequest?(.display(id)) }
         case let (.fullscreen(screen), _):
-            captureFullscreen(on: screen, timer: timer, sourceApp: previousApp)
+            captureFullscreen(on: screen, timer: timer, edits: false, sourceApp: previousApp, session: nil)
 
         case let (.area(_, screen, rect), .record):
             isBusy = false
@@ -294,6 +322,7 @@ public final class CaptureFeature {
                     deliver(live, on: screen, sourceApp: previousApp)
                 } catch {
                     logger.error("Timer capture failed: \(error.localizedDescription)")
+                    copiesNextShot = false
                 }
             }
 
@@ -307,6 +336,7 @@ public final class CaptureFeature {
                     deliver(captured, on: screen, sourceApp: previousApp)
                 } catch {
                     logger.error("Window capture failed: \(error.localizedDescription)")
+                    copiesNextShot = false
                 }
             }
         }
@@ -320,18 +350,81 @@ public final class CaptureFeature {
         }
     }
 
-    private func captureFullscreen(on screen: NSScreen, timer: Int, sourceApp: NSRunningApplication?) {
+    private func captureFullscreen(
+        on screen: NSScreen, timer: Int, edits: Bool, sourceApp: NSRunningApplication?, session: SelectionSession?
+    ) {
         Task {
-            defer { isBusy = false }
+            let watchdog = Self.releaseLater(session)
+            defer {
+                watchdog.cancel()
+                session?.releaseOverlay()
+            }
             await Countdown.run(seconds: timer, on: screen)
+            let captured: CapturedImage
             do {
-                let captured = try await ScreenGrabber.capture(screen, hideDesktopIcons: settings.hideDesktopIcons)
-                ScreenFlash.show(captured, on: screen)
-                deliver(captured, on: screen, sourceApp: sourceApp)
+                captured = try await ScreenGrabber.capture(screen, hideDesktopIcons: settings.hideDesktopIcons)
             } catch {
                 logger.error("Fullscreen capture failed: \(error.localizedDescription)")
+                endWithoutShot()
+                return
             }
+            guard edits else {
+                isBusy = false
+                ScreenFlash.show(captured, on: screen)
+                deliver(captured, on: screen, sourceApp: sourceApp)
+                return
+            }
+            editFullscreen(captured, on: screen, sourceApp: sourceApp)
         }
+    }
+
+    private func editFullscreen(_ captured: CapturedImage, on screen: NSScreen, sourceApp: NSRunningApplication?) {
+        let whole = CGRect(origin: .zero, size: screen.frame.size)
+        editInPlace(captured, backdrop: captured.image, on: screen, rect: whole, sourceApp: sourceApp)
+    }
+
+    private func editWindow(
+        _ id: CGWindowID, frame: CGRect?, backdrop: CGImage?, on screen: NSScreen,
+        sourceApp: NSRunningApplication?, session: SelectionSession?
+    ) {
+        sourceApp?.activate()
+        Task {
+            let watchdog = Self.releaseLater(session)
+            defer {
+                watchdog.cancel()
+                session?.releaseOverlay()
+            }
+            await Self.waitUntilActive(sourceApp)
+            let captured: CapturedImage
+            do {
+                captured = try await ScreenGrabber.captureWindow(id: id)
+            } catch {
+                logger.error("Window capture failed: \(error.localizedDescription)")
+                endWithoutShot()
+                return
+            }
+            let size = CGSize(
+                width: CGFloat(captured.image.width) / captured.scale, height: CGFloat(captured.image.height) / captured.scale
+            )
+            let window = frame ?? CGRect(
+                x: screen.frame.midX - size.width / 2, y: screen.frame.midY - size.height / 2,
+                width: size.width, height: size.height
+            )
+            let area = CaptureGeometry.windowArea(window: window, imageSize: size, screen: screen.frame, scale: captured.scale)
+            editInPlace(captured, backdrop: backdrop, on: screen, rect: area, reframes: false, sourceApp: sourceApp)
+        }
+    }
+
+    private static func releaseLater(_ session: SelectionSession?) -> Task<Void, Never> {
+        Task { [weak session] in
+            do { try await Task.sleep(for: .seconds(2)) } catch { return }
+            session?.releaseOverlay()
+        }
+    }
+
+    private func endWithoutShot() {
+        isBusy = false
+        copiesNextShot = false
     }
 
     private func startScrolling(on screen: NSScreen, rect: CGRect, sourceApp: NSRunningApplication?) {
@@ -347,12 +440,16 @@ public final class CaptureFeature {
     }
 
     private func editInPlace(
-        _ captured: CapturedImage, backdrop: CGImage?, on screen: NSScreen, rect: CGRect, sourceApp: NSRunningApplication?
+        _ captured: CapturedImage, backdrop: CGImage?, on screen: NSScreen, rect: CGRect, reframes: Bool = true,
+        sourceApp: NSRunningApplication?
     ) {
-        let editor = InPlaceAnnotator(captured: captured, backdrop: backdrop, screen: screen, area: rect) { [weak self] result in
+        let editor = InPlaceAnnotator(
+            captured: captured, backdrop: backdrop, screen: screen, area: rect, reframes: reframes
+        ) { [weak self] result in
             guard let self else { return }
             inPlaceEditor = nil
             isBusy = false
+            prepareAhead(after: 1)
             sourceApp?.activate()
             if let (action, result) = result {
                 deliverEdited(result, action: action, on: screen, sourceApp: sourceApp)

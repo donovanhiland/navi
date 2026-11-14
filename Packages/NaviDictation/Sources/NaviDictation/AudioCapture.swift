@@ -49,6 +49,7 @@ struct PreRollBuffer<Chunk> {
 final class Microphone: @unchecked Sendable {
     static let preRoll: Double = 0.45
     static let quietToEnd: Duration = .milliseconds(200)
+    static let quietToEndWhileTalking: Duration = .milliseconds(300)
     static let minimumTail: Duration = .milliseconds(40)
     static let maximumTail: Duration = .milliseconds(600)
     static let soundLevel: Float = 0.45
@@ -61,6 +62,7 @@ final class Microphone: @unchecked Sendable {
         var preRoll = PreRollBuffer<AVAudioPCMBuffer>(capacity: 0)
         var level: Float = 0
         var lastSound: ContinuousClock.Instant?
+        var gate = SoundGate()
     }
 
     private let setup = NSRecursiveLock()
@@ -164,6 +166,7 @@ final class Microphone: @unchecked Sendable {
     func beginCapture(into sink: AsyncStream<AudioChunk>.Continuation, includePreRoll: Bool) {
         let kept = state.withLockUnchecked { state -> [AVAudioPCMBuffer] in
             state.sink = sink
+            state.gate = SoundGate()
             let kept = state.preRoll.drain()
             return includePreRoll ? kept : []
         }
@@ -183,7 +186,8 @@ final class Microphone: @unchecked Sendable {
         if sinceRelease < minimumTail { return false }
         if sinceRelease >= maximumTail { return true }
         guard let sinceSound else { return true }
-        return sinceSound >= quietToEnd
+        let talkingAtRelease = sinceRelease - sinceSound > .zero - quietToEnd
+        return sinceSound >= (talkingAtRelease ? quietToEndWhileTalking : quietToEnd)
     }
 
     func endCapture() {
@@ -275,11 +279,12 @@ final class Microphone: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioPCMBuffer) {
-        let level = Self.loudness(of: buffer)
+        let decibels = Self.decibels(of: buffer)
+        let level = Self.loudness(decibels: decibels)
         let now = ContinuousClock.now
         let sink = state.withLockUnchecked { state -> AsyncStream<AudioChunk>.Continuation? in
             state.level = level
-            if level >= Self.soundLevel { state.lastSound = now }
+            if state.gate.isSound(decibels: decibels) { state.lastSound = now }
             if state.sink == nil { state.preRoll.append(buffer, frames: Int(buffer.frameLength)) }
             return state.sink
         }
@@ -287,15 +292,22 @@ final class Microphone: @unchecked Sendable {
     }
 
     static func loudness(of buffer: AVAudioPCMBuffer) -> Float {
-        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
+        guard buffer.frameLength > 0 else { return 0 }
+        return loudness(decibels: decibels(of: buffer))
+    }
+
+    static func loudness(decibels: Float) -> Float {
+        max(0, min(1, (decibels + 50) / 50)).squareRoot()
+    }
+
+    static func decibels(of buffer: AVAudioPCMBuffer) -> Float {
+        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return -120 }
         var sum: Float = 0
         for index in 0 ..< Int(buffer.frameLength) {
             let sample = channel[index]
             sum += sample * sample
         }
         let rms = (sum / Float(buffer.frameLength)).squareRoot()
-        let decibels = 20 * log10(max(rms, 0.000_001))
-        let normalized = max(0, min(1, (decibels + 50) / 50))
-        return normalized.squareRoot()
+        return 20 * log10(max(rms, 0.000_001))
     }
 }

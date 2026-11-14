@@ -82,7 +82,14 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   aggregate device, which changes music and cuts it out when it stops.
   After the release, recording runs on until
   200 ms of quiet (at least 40 ms, at most 600 ms), so the last word is kept and
-  a user who already stopped talking waits only 40 ms. Speech and cleanup run
+  a user who already stopped talking waits only 40 ms. When there was sound in
+  the 200 ms before the release (still talking), it needs 300 ms of quiet, so a
+  short pause before the last word does not end it. Sound means louder than the
+  room: the quietest 10 ms of the dictation plus 12 dB, with that floor held
+  between −60 and −50 dB (`SoundGate`), not a fixed level, so soft speech
+  counts. `TailComparisonTests` (`NAVI_TAIL_OUT=<file.json> swift test --filter
+  TailComparison`) replays spoken sentences at three loudness levels and two mic
+  delays through Parakeet to compare the rule with the old one. Speech and cleanup run
   while the user talks (`LiveDictation`): about once a second, and when the user
   goes quiet, Parakeet transcribes the audio after the last finished sentence. A
   sentence is finished when another one follows it with a real pause (found in

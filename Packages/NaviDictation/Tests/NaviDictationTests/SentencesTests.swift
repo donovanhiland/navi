@@ -102,8 +102,39 @@ struct TailTests {
 
     @Test func waitsForQuietWhileSpeechGoesOn() {
         #expect(!Microphone.tailIsDone(sinceRelease: .milliseconds(100), sinceSound: .milliseconds(50)))
-        #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(300), sinceSound: .milliseconds(200)))
+        #expect(!Microphone.tailIsDone(sinceRelease: .milliseconds(300), sinceSound: .milliseconds(200)))
+        #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(400), sinceSound: .milliseconds(300)))
         #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(600), sinceSound: .zero))
+    }
+}
+
+struct SoundGateTests {
+    private func sound(_ gate: inout SoundGate, _ decibels: Float) -> Bool {
+        gate.isSound(decibels: decibels)
+    }
+
+    @Test func talkingFromTheFirstMomentStillCountsAsSound() {
+        var gate = SoundGate()
+        #expect(sound(&gate, -25) == true)
+        #expect(sound(&gate, -27) == true)
+    }
+
+    @Test func softSpeechInAQuietRoomCountsAsSound() {
+        var gate = SoundGate()
+        _ = gate.isSound(decibels: -58)
+        #expect(sound(&gate, -44) == true)
+        #expect(sound(&gate, -50) == false)
+    }
+
+    @Test func digitalSilenceDoesNotMakeRoomNoiseLookLikeSpeech() {
+        var gate = SoundGate()
+        _ = gate.isSound(decibels: -120)
+        #expect(sound(&gate, -52) == false)
+    }
+
+    @Test func speechWithinTheQuietTimeBeforeTheReleaseNeedsTheLongerQuiet() {
+        #expect(!Microphone.tailIsDone(sinceRelease: .milliseconds(100), sinceSound: .milliseconds(250)))
+        #expect(Microphone.tailIsDone(sinceRelease: .milliseconds(150), sinceSound: .milliseconds(300)))
     }
 }
 

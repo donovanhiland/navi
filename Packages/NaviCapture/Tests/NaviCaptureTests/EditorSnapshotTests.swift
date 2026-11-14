@@ -65,9 +65,10 @@ struct EditorSnapshotTests {
         "middle": CGRect(x: 420, y: 180, width: 560, height: 360),
         "bottom": CGRect(x: 300, y: 480, width: 640, height: 400),
         "full": CGRect(x: 0, y: 0, width: 1440, height: 900),
+        "window": CGRect(x: 288, y: 135, width: 864, height: 630),
     ]
 
-    @Test(arguments: ["middle", "bottom", "full"])
+    @Test(arguments: ["middle", "bottom", "full", "window"])
     func editAfterCapture(place: String) throws {
         let folder = URL(filePath: ProcessInfo.processInfo.environment["NAVI_SNAPSHOTS"]!)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -75,7 +76,7 @@ struct EditorSnapshotTests {
         let backdrop = try Self.backdrop(size: CGSize(width: screen.width * 2, height: screen.height * 2))
         let area = try #require(Self.areas[place])
         let pixels = CGRect(x: area.minX * 2, y: area.minY * 2, width: area.width * 2, height: area.height * 2)
-        let placement = ScreenPlacement(origin: area.origin, source: pixels, scale: 2)
+        let placement = ScreenPlacement(origin: area.origin, source: place == "window" ? nil : pixels, scale: 2)
         let model = AnnotateModel(base: try #require(backdrop.cropping(to: pixels)), scale: 2, placement: placement)
         model.tool = .arrow
         model.pointerDown(at: CGPoint(x: 140, y: 560))
@@ -88,7 +89,8 @@ struct EditorSnapshotTests {
 
         for (name, appearance) in [("dark", NSAppearance.Name.darkAqua), ("light", .aqua)] {
             let view = NSHostingView(rootView: InPlaceAnnotateView(
-                model: model, backdrop: backdrop, area: area, onDone: {}, onSave: {}, onStash: {}, onCancel: {}
+                model: model, backdrop: backdrop, area: area, onDone: {}, onSave: {}, onStash: {}, onCancel: {},
+                revealOverride: 1
             ))
             view.appearance = NSAppearance(named: appearance)
             view.frame = CGRect(origin: .zero, size: screen)

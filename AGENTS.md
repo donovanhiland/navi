@@ -213,11 +213,15 @@ video editor.
   at a display edge. Right-drag: up/down resizes it, left/right zooms. Both
   are kept (`capture.magnifierSize`, `capture.magnifierPixels`).
 - The screen freeze starts before the selection overlay is built. When Navi
-  has no normal window open and Hide Desktop Icons is off, it captures each
-  display with a filter that leaves out the whole Navi app (cached displays
-  and app from launch); otherwise it fetches `SCShareableContent` first. The
-  overlay waits for the frozen images, at most 0.1 s, so the dim, frozen
-  screen, and magnifier show together with no fade in. The frozen images are
+  has no normal window open, it captures each display with a filter that
+  leaves out the whole Navi app (cached displays and app from launch). With
+  Hide Desktop Icons on, the same filter also leaves out Finder but keeps its
+  real windows (cached; refreshed when Finder becomes active and after each
+  shot). If the window list then shows a Finder window the cache missed, the
+  shot is taken again the slow way. Otherwise it fetches `SCShareableContent`
+  first. The overlay waits for the frozen images, at most 0.1 s, so the dim,
+  frozen screen, magnifier, and the first window ring show in one frame; the
+  ring glides only after that. The frozen images are
   what gets cropped; a selection that ends first waits for them, off screen.
   The window list for the highlight is read off the main thread. Nothing else
   is built when a shot starts: the spare card panel and the editor window are
@@ -404,6 +408,7 @@ scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signat
 scripts/pr-title-check.sh "fix(capture): …"  # checks a PR title the way CI does
 MODE=dry-run VERSION=9.9.9 BUILD=1 NOTES=x SKIP_TESTS=1 scripts/ci-release.sh  # release without Apple keys; nothing published
 scripts/dev.sh          # build and run Navi Dev in place of Navi (fresh: wipe it first; stop: back to Navi)
+swiftc -O -swift-version 5 scripts/frame-probe.swift -o /tmp/frame-probe && /tmp/frame-probe --runs 3  # records the screen at 120 fps, presses ⇧⌘4, saves every changed frame as /tmp/navi-frames/runN/<ms since key>.png (needs an unlocked screen and a non-sandboxed shell)
 ```
 
 Releases live on GitHub (`donovanhiland/navi` is public) and are built on

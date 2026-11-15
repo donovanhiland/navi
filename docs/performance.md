@@ -55,6 +55,15 @@ Live numbers in the real app (M5 Pro, 3K screen, Debug build with `SWIFT_OPTIMIZ
 | Mouse up to corner card on screen | 72 ms | 38 ms |
 | Mouse up to edit-after-capture editor on screen | 74 ms (first 620 ms) | 45 ms (first 72 ms) |
 
+With Hide Desktop Icons on, the shortcut took the slow path until November 2026: the overlay showed the live screen at once, the window ring faded in over 0.14 s, and the magnifier came last. Now it takes the fast path too (the filter also leaves out Finder but keeps its real windows). Recorded with `scripts/frame-probe.swift` at 120 fps, plus `Timing` medians of 20 presses 3 s apart:
+
+| Hide Desktop Icons on | Before | After |
+|---|---|---|
+| Shortcut to the last part on screen (frames) | 152 ms warm, 418 ms first | 129–201 ms, everything in one frame |
+| Shortcut to overlay on screen (`Timing`) | — | 81 ms (Debug), 75–84 ms (`-O`); first after launch 140–250 ms |
+
+Of those 81 ms, about 70 ms is ScreenCaptureKit's capture; key to handler is 2–3 ms and session setup 6 ms. Optimizing the build does not change it. A standalone capture takes about 46 ms when called back to back and about 130 ms after 20 s idle. Warming it with an extra capture would flash the purple screen-capture dot in the menu bar, so Navi does not.
+
 Plain Debug builds do not optimize `PNGEncoder`, so the card step is slower there than with ImageIO. Measure with `-O` or Release.
 
 ### Recording benchmark

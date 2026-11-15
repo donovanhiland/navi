@@ -57,8 +57,11 @@ final class SelectionSession {
         reveal()
     }
 
+    private(set) var windowsLoaded = false
+
     func updateWindows(_ windows: [OnScreenWindow]) {
         self.windows = windows
+        windowsLoaded = true
         guard revealed else { return }
         for overlay in overlays { overlay.overlayView.windowsChanged() }
     }
@@ -469,8 +472,11 @@ final class OverlayView: NSView {
             return
         }
         let target = clickTarget
-        highlight.show(target, rect: target.map { $0.frame.intersection(bounds) })
+        highlight.show(target, rect: target.map { $0.frame.intersection(bounds) }, animated: highlightSettled)
+        if session?.windowsLoaded == true { highlightSettled = true }
     }
+
+    private var highlightSettled = false
 
     private func cursor(at point: CGPoint) -> NSCursor {
         guard mode == .area else { return OverlayView.cameraCursor }

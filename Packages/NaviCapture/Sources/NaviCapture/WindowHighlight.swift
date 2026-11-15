@@ -20,10 +20,19 @@ final class WindowHighlight {
     private static let cornerRadius: CGFloat = 12
     static let purple = NSColor(srgbRed: 0.545, green: 0.361, blue: 0.965, alpha: 1)
 
-    func show(_ window: OnScreenWindow?, rect: CGRect?) {
+    func show(_ window: OnScreenWindow?, rect: CGRect?, animated: Bool = true) {
         guard window?.id != self.window?.id else { return }
         self.window = window
         icon = window.flatMap { NSRunningApplication(processIdentifier: $0.ownerPID)?.icon }
+        guard animated else {
+            timer?.invalidate()
+            timer = nil
+            frame = rect
+            alpha = rect == nil ? 0 : 1
+            toAlpha = alpha
+            onChange?()
+            return
+        }
         let current = frame ?? rect ?? .zero
         fromFrame = current
         fromAlpha = alpha

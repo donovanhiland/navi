@@ -24,10 +24,12 @@ enum CaptureError: Error {
 
 @MainActor
 enum ScreenGrabber {
-    static let finderBundleID = "com.apple.finder"
+    nonisolated static let finderBundleID = "com.apple.finder"
 
     private static var displays: [SCDisplay] = []
     private static var ownApp: SCRunningApplication?
+    private static var finderApp: SCRunningApplication?
+    private static var finderWindows: [SCWindow] = []
     private static var observesScreens = false
 
     static func prewarm() {
@@ -50,7 +52,22 @@ enum ScreenGrabber {
         displays = content.displays
         let pid = ProcessInfo.processInfo.processIdentifier
         ownApp = content.applications.first { $0.processID == pid } ?? ownApp
+        finderApp = content.applications.first { $0.bundleIdentifier == finderBundleID }
+        finderWindows = content.windows.filter { $0.owningApplication?.bundleIdentifier == finderBundleID && $0.windowLayer >= 0 }
         watchScreens()
+    }
+
+    static func refreshContent() {
+        Task {
+            guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true) else { return }
+            remember(content)
+        }
+    }
+
+    static func missesFinderWindows(_ windows: [OnScreenWindow]) -> Bool {
+        guard let finderApp else { return false }
+        let known = Set(finderWindows.map(\.windowID))
+        return windows.contains { $0.ownerPID == finderApp.processID && !known.contains($0.id) }
     }
 
     private static func rememberOwnApp(_ content: SCShareableContent) {
@@ -93,7 +110,7 @@ enum ScreenGrabber {
     static func startFreeze(
         hideDesktopIcons: Bool, completion: @escaping ([(NSScreen, CapturedImage)]?) -> Void
     ) -> Bool {
-        guard !hideDesktopIcons, let ownApp, !displays.isEmpty,
+        guard let ownApp, !displays.isEmpty, !hideDesktopIcons || finderApp != nil,
               !NSApp.windows.contains(where: { $0.isVisible && $0.level == .normal })
         else { return false }
         let screens = NSScreen.screens
@@ -105,7 +122,12 @@ enum ScreenGrabber {
             config.height = Int(screen.frame.height * screen.backingScaleFactor)
             config.captureResolution = .best
             config.showsCursor = false
-            requests.append((SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: []), config))
+            let filter = if hideDesktopIcons, let finderApp {
+                SCContentFilter(display: display, excludingApplications: [ownApp, finderApp], exceptingWindows: finderWindows)
+            } else {
+                SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
+            }
+            requests.append((filter, config))
         }
         let collector = FreezeCollector(screens: screens, completion: completion)
         for (index, request) in requests.enumerated() {
@@ -124,6 +146,13 @@ enum ScreenGrabber {
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
         ) { _ in
             MainActor.assumeIsolated { displays = [] }
+        }
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == finderBundleID else { return }
+            MainActor.assumeIsolated { refreshContent() }
         }
     }
 

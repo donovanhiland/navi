@@ -46,10 +46,12 @@ struct EditorSnapshotTests {
         context.setFillColor(CGColor(srgbRed: 0.35, green: 0.55, blue: 0.85, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 1200, height: 700))
         let model = AnnotateModel(base: context.makeImage()!, scale: 2)
-        for (step, text) in [("open", ""), ("typed", "Typed with no click")] {
+        for (step, text) in [("open", ""), ("typed", "Typed with no click"), ("wrapped", "A long note that runs past the right edge of the shot and keeps going so it has to wrap"), ("committed", "A long note that runs past the right edge of the shot and keeps going so it has to wrap")] {
+            model.pointerMoved(to: step == "wrapped" || step == "committed" ? CGPoint(x: 1900, y: 300) : nil)
             model.tool = .select
             model.tool = .text
             model.textEdit?.text = text
+            if step == "committed" { model.finishText() }
             let view = NSHostingView(rootView: AnnotateView(model: model, onDone: {}, onCancel: {}))
             view.appearance = NSAppearance(named: .darkAqua)
             view.frame = CGRect(x: 0, y: 0, width: 1000, height: 420)

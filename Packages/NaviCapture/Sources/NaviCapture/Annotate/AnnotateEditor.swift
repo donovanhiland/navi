@@ -157,13 +157,24 @@ struct AnnotateToolbar: View {
         ToolGroup {
             ColorWell(model: model)
                 .tooltip(Tip(title: "Color"))
-            ForEach(StrokeSize.allCases, id: \.self) { size in
-                IconButton(isOn: model.strokeSize == size, style: .subtle) {
-                    model.strokeSize = size
-                } label: {
-                    Capsule().frame(width: 14, height: size.previewHeight)
+            if model.showsTextStyle {
+                ForEach(TextSize.allCases, id: \.self) { size in
+                    IconButton(isOn: model.textSize == size, style: .subtle) {
+                        model.textSize = size
+                    } label: {
+                        Text(size.label).font(.system(size: 11, weight: .semibold))
+                    }
+                    .tooltip(Tip(title: size.title))
                 }
-                .tooltip(Tip(title: "\(size.title) line"))
+            } else {
+                ForEach(StrokeSize.allCases, id: \.self) { size in
+                    IconButton(isOn: model.strokeSize == size, style: .subtle) {
+                        model.strokeSize = size
+                    } label: {
+                        Capsule().frame(width: 14, height: size.previewHeight)
+                    }
+                    .tooltip(Tip(title: "\(size.title) line"))
+                }
             }
             Menu {
                 Button("Rotate Left") { model.apply(.rotateCounterclockwise) }

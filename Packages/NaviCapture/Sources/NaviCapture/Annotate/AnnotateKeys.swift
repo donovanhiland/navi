@@ -13,7 +13,8 @@ enum AnnotateKeys {
         let code = event.keyCode
         let flags = modifiers(of: event)
         if model.textEdit != nil {
-            guard code == escape else { return false }
+            let isReturn = code == returnKey || code == keypadEnter
+            guard code == escape || (isReturn && flags == .command) else { return false }
             model.finishText()
             return true
         }

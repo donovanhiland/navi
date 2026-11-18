@@ -11,7 +11,6 @@ struct AnnotateCanvas: View {
     @Bindable var model: AnnotateModel
     let layout: Layout
     var setsHoverCursor = true
-    @FocusState private var isTyping: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -34,7 +33,7 @@ struct AnnotateCanvas: View {
                             .frame(width: patch.rect.width * fit, height: patch.rect.height * fit)
                             .offset(x: patch.rect.minX * fit, y: patch.rect.minY * fit)
                     }
-                    if let mark = model.selectedMark, model.cropRect == nil {
+                    if let mark = model.selectedMark, model.cropRect == nil, model.textEdit == nil {
                         MarkOutline(mark: mark, fit: fit)
                     }
                     if let crop = model.cropRect {
@@ -61,9 +60,8 @@ struct AnnotateCanvas: View {
                     loadDroppedImage(providers)
                     return true
                 }
-                if let edit = model.textEdit {
-                    textField(fit: fit)
-                        .task(id: "\(edit.point.x),\(edit.point.y)") { isTyping = true }
+                if let edit = model.textEdit, let frame = model.editingFrame {
+                    textBox(edit, frame: frame, fit: fit)
                 }
             }
             .frame(width: shown.width, height: shown.height, alignment: .topLeading)
@@ -133,23 +131,20 @@ struct AnnotateCanvas: View {
         }
     }
 
-    private func textField(fit: CGFloat) -> some View {
-        let point = model.textEdit?.point ?? .zero
-        let fontSize = model.textEditFontSize * fit
-        let color = Color(.sRGB, red: model.color.red, green: model.color.green, blue: model.color.blue)
-        return TextField("", text: Binding(
-            get: { model.textEdit?.text ?? "" },
-            set: { model.textEdit?.text = $0 }
-        ), axis: .vertical)
-            .textFieldStyle(.plain)
-            .focused($isTyping)
-            .font(.system(size: fontSize, weight: .bold))
-            .foregroundStyle(.clear)
-            .tint(color)
-            .frame(minWidth: 120, maxWidth: 400, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 3).stroke(Color.accentColor, lineWidth: 1).padding(-3))
-            .offset(x: point.x * fit, y: point.y * fit)
-            .onSubmit(model.finishText)
+    private func textBox(_ edit: AnnotateModel.TextEdit, frame: CGRect, fit: CGFloat) -> some View {
+        let caret = edit.fontSize * 0.25
+        let size = CGSize(width: (frame.width + caret) * fit, height: frame.height * fit)
+        return TextBoxView(model: model, fit: fit, size: CGSize(width: frame.width + caret, height: frame.height))
+            .id(edit.session)
+            .frame(width: size.width, height: size.height)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .padding(-4)
+                    .allowsHitTesting(false)
+            )
+            .padding(.leading, frame.minX * fit)
+            .padding(.top, frame.minY * fit)
     }
 
     private func loadDroppedImage(_ providers: [NSItemProvider]) {
@@ -175,8 +170,8 @@ private struct MarkOutline: View {
     let fit: CGFloat
 
     var body: some View {
-        let lineGap = mark.isBox ? CGFloat(mark.lineWidth) / 2 * fit + 3 : 6
-        let outline = (mark.isBox ? mark.box : mark.bounds)
+        let lineGap = mark.isBox ? CGFloat(mark.lineWidth) / 2 * fit + 3 : (mark.kind == .text ? 4 : 6)
+        let outline = (mark.hasFrame ? mark.box : mark.bounds)
             .applying(CGAffineTransform(scaleX: fit, y: fit))
             .insetBy(dx: -lineGap, dy: -lineGap)
         ZStack(alignment: .topLeading) {
@@ -205,7 +200,7 @@ private struct MarkOutline: View {
     }
 
     private func handlePoint(_ handle: Annotation.Handle, outline: CGRect) -> CGPoint {
-        guard mark.isBox else {
+        guard mark.hasFrame else {
             let point = mark.point(of: handle)
             return CGPoint(x: point.x * fit, y: point.y * fit)
         }
@@ -214,5 +209,110 @@ private struct MarkOutline: View {
         let x = mark.x < box.midX - 0.5 ? outline.minX : (mark.x > box.midX + 0.5 ? outline.maxX : outline.midX)
         let y = mark.y < box.midY - 0.5 ? outline.minY : (mark.y > box.midY + 0.5 ? outline.maxY : outline.midY)
         return CGPoint(x: x, y: y)
+    }
+}
+
+private struct TextBoxView: NSViewRepresentable {
+    let model: AnnotateModel
+    let fit: CGFloat
+    let size: CGSize
+
+    func makeCoordinator() -> Coordinator { Coordinator(model: model) }
+
+    func makeNSView(context: Context) -> TextBoxHost {
+        let host = TextBoxHost()
+        host.textView.delegate = context.coordinator
+        return host
+    }
+
+    func updateNSView(_ host: TextBoxHost, context: Context) {
+        guard let edit = model.textEdit else { return }
+        host.update(
+            text: edit.text, fontSize: edit.fontSize, color: edit.color,
+            wrap: edit.width ?? model.textWrapLimit, size: size, fit: fit
+        )
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        let model: AnnotateModel
+
+        init(model: AnnotateModel) { self.model = model }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView, model.textEdit != nil,
+                  !textView.hasMarkedText()
+            else { return }
+            model.textEdit?.text = textView.string
+        }
+    }
+}
+
+final class TextBoxHost: NSView {
+    let textView: NSTextView
+    private var fit: CGFloat = 1
+    private var style: (Double, RGBA)?
+
+    override init(frame: NSRect) {
+        textView = NSTextView(usingTextLayoutManager: false)
+        super.init(frame: frame)
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.allowsUndo = true
+        textView.drawsBackground = false
+        textView.textContainerInset = .zero
+        textView.isVerticallyResizable = false
+        textView.isHorizontallyResizable = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = false
+        textView.textContainer?.heightTracksTextView = false
+        addSubview(textView)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var isFlipped: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window else { return }
+        window.makeFirstResponder(textView)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window, window.firstResponder !== self.textView else { return }
+            window.makeFirstResponder(self.textView)
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        applyScale()
+    }
+
+    func update(text: String, fontSize: Double, color: RGBA, wrap: Double, size: CGSize, fit: CGFloat) {
+        if self.fit != fit {
+            self.fit = fit
+            applyScale()
+        }
+        textView.textContainer?.size = CGSize(width: max(1, wrap), height: TextLayout.unbounded)
+        textView.frame = CGRect(origin: .zero, size: size)
+        if textView.string != text, !textView.hasMarkedText() { textView.string = text }
+        if style.map({ $0.0 != fontSize || $0.1 != color }) ?? true {
+            style = (fontSize, color)
+            let attributes = TextLayout.attributes(fontSize: fontSize, color: color)
+            textView.typingAttributes = attributes
+            textView.insertionPointColor = NSColor(cgColor: color.cgColor) ?? .red
+        }
+        let attributes = textView.typingAttributes
+        if let storage = textView.textStorage, storage.length > 0, !textView.hasMarkedText() {
+            storage.setAttributes(attributes, range: NSRange(location: 0, length: storage.length))
+        }
+    }
+
+    private func applyScale() {
+        guard fit > 0 else { return }
+        setBoundsSize(NSSize(width: frame.width / fit, height: frame.height / fit))
     }
 }

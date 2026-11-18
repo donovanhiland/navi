@@ -111,6 +111,7 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     public var text: String?
     public var number: Int?
     public var fontSize: Double = 32
+    public var textWidth: Double?
     public var imagePNG: Data?
 
     public var bounds: CGRect {
@@ -124,12 +125,8 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
             let radius = fontSize * 0.8
             return CGRect(x: start.x - radius, y: start.y - radius, width: radius * 2, height: radius * 2)
         case .text:
-            let lines = (text ?? "").split(separator: "\n", omittingEmptySubsequences: false)
-            let longest = lines.map(\.count).max() ?? 0
-            return CGRect(
-                x: start.x, y: start.y,
-                width: max(fontSize, Double(longest) * fontSize * 0.6), height: Double(max(lines.count, 1)) * fontSize * 1.25
-            )
+            let size = TextLayout.size(of: text ?? "", fontSize: fontSize, wrap: textWidth, fixed: textWidth != nil)
+            return CGRect(origin: start, size: size)
         default:
             return CaptureGeometry.rect(from: start, to: end).insetBy(dx: -lineWidth / 2, dy: -lineWidth / 2)
         }
@@ -155,16 +152,29 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         }
     }
 
+    public var hasFrame: Bool { isBox || kind == .text }
+
     public var handles: [Handle] {
         if isBox { return Handle.allCases }
+        if kind == .text { return [.start, .end, .startXEndY, .endXStartY, .left, .right] }
         if kind == .arrow || kind == .line { return [.start, .end] }
         return []
     }
 
-    public var box: CGRect { CaptureGeometry.rect(from: start, to: end) }
+    public var box: CGRect { kind == .text ? bounds : CaptureGeometry.rect(from: start, to: end) }
 
     public func point(of handle: Handle) -> CGPoint {
-        switch handle {
+        if kind == .text {
+            let frame = box
+            switch handle {
+            case .start: return CGPoint(x: frame.minX, y: frame.minY)
+            case .end: return CGPoint(x: frame.maxX, y: frame.maxY)
+            case .startXEndY: return CGPoint(x: frame.minX, y: frame.maxY)
+            case .endXStartY: return CGPoint(x: frame.maxX, y: frame.minY)
+            default: break
+            }
+        }
+        return switch handle {
         case .start: start
         case .end: end
         case .startXEndY: CGPoint(x: start.x, y: end.y)
@@ -181,18 +191,55 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
             hypot(self.point(of: $0).x - point.x, self.point(of: $0).y - point.y) <= tolerance
         }
         if let corner { return corner }
-        guard isBox else { return nil }
+        guard hasFrame else { return nil }
         let r = box
         let alongX = point.x >= r.minX - tolerance && point.x <= r.maxX + tolerance
         let alongY = point.y >= r.minY - tolerance && point.y <= r.maxY + tolerance
         if alongY, abs(point.x - r.minX) <= tolerance { return .left }
         if alongY, abs(point.x - r.maxX) <= tolerance { return .right }
+        guard isBox else { return nil }
         if alongX, abs(point.y - r.minY) <= tolerance { return .top }
         if alongX, abs(point.y - r.maxY) <= tolerance { return .bottom }
         return nil
     }
 
+    public static let smallestFontSize = 8.0
+
+    private func resizedText(_ handle: Handle, to point: CGPoint) -> Annotation {
+        var copy = self
+        let frame = box
+        let narrowest = fontSize
+        switch handle {
+        case .right:
+            copy.textWidth = max(narrowest, point.x - frame.minX)
+        case .left:
+            let width = max(narrowest, frame.maxX - point.x)
+            copy.textWidth = width
+            copy.start.x = frame.maxX - width
+        case .top, .bottom:
+            return self
+        case .start, .end, .startXEndY, .endXStartY:
+            let anchorRight = handle == .start || handle == .startXEndY
+            let anchorBottom = handle == .start || handle == .endXStartY
+            let anchorX = anchorRight ? frame.maxX : frame.minX
+            let anchorY = anchorBottom ? frame.maxY : frame.minY
+            let wide = abs(point.x - anchorX) / max(frame.width, 1)
+            let tall = abs(point.y - anchorY) / max(frame.height, 1)
+            let factor = max(max(wide, tall), Self.smallestFontSize / fontSize)
+            copy.fontSize = fontSize * factor
+            copy.textWidth = textWidth.map { $0 * factor }
+            let size = CGSize(width: frame.width * factor, height: frame.height * factor)
+            copy.start = CGPoint(
+                x: anchorRight ? anchorX - size.width : anchorX,
+                y: anchorBottom ? anchorY - size.height : anchorY
+            )
+        }
+        copy.end = copy.start
+        return copy
+    }
+
     public func resized(_ handle: Handle, to point: CGPoint) -> Annotation {
+        if kind == .text { return resizedText(handle, to: point) }
         var copy = self
         if handle.isEdge {
             copy.start = CGPoint(x: box.minX, y: box.minY)
@@ -228,6 +275,7 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
         copy.points = points.map { $0.applying(transform) }
         copy.lineWidth = lineWidth * scale
         copy.fontSize = fontSize * scale
+        copy.textWidth = textWidth.map { $0 * scale }
         return copy
     }
 }

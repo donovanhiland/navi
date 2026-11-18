@@ -296,8 +296,8 @@ video editor.
   no corner card. Save (`⌘S`) writes it to the save folder and shows "Saved".
   Stash only keeps it in the history and shows "Stashed". Both add it to the
   history and do not copy. Esc or Cancel drops the shot, with no close animation (the
-  selection overlay's Esc too). While typing text or cropping,
-  Return and Esc end that first. Every editor key (tool letters, `⌘Z`, Delete)
+  selection overlay's Esc too). While typing text, Esc or `⌘Return`
+  ends it and Return adds a line. While cropping, Return and Esc end that first. Every editor key (tool letters, `⌘Z`, Delete)
   works. The window editor and this one share `AnnotateToolbar`,
   `AnnotateCanvas`, and `AnnotateKeys`.
 - Every screenshot goes to the clipboard as soon as it is taken, and again after
@@ -312,7 +312,14 @@ video editor.
   the caret in it, no click needed (at the mouse if it is over the image,
   else a quarter in from the left); a click elsewhere moves an empty box; a click
   outside keeps the text and selects it; drag text with the text or select
-  tool; click selected text to edit it; Esc ends typing.
+  tool; click selected text to edit it; Esc or `⌘Return` ends typing, Return
+  adds a line. Text works like Excalidraw: the box grows as you type and wraps
+  at the image's right edge; on selected text, the left and right handles set a
+  wrap width (`Annotation.textWidth`) and the corners scale the font. With the
+  text tool or text selected, the toolbar shows S/M/L/XL text sizes instead of
+  line sizes; size and color change the text you are typing. Typing happens in
+  an `NSTextView` laid out in image pixels (`TextLayout`, TextKit 1), the same
+  layout the renderer draws, so the text does not move when you finish.
 - Copy and Save close the card, like CleanShot X. ⌥ + Copy keeps it open. Show
   in Finder keeps it open.
 - While the mouse is on a card: `⌘C` copy, `⌘S` save, `⌘W` close. They are

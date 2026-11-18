@@ -26,6 +26,10 @@ final class AnnotateModel {
         var point: CGPoint
         var text: String
         var id: UUID?
+        var fontSize: Double
+        var color: RGBA
+        var width: Double?
+        let session = UUID()
     }
 
     private(set) var base: CGImage
@@ -43,11 +47,47 @@ final class AnnotateModel {
     }
 
     var color: RGBA = .red {
-        didSet { if !isSyncingStyle { restyleSelection() } }
+        didSet {
+            guard !isSyncingStyle else { return }
+            if textEdit != nil {
+                textEdit?.color = color
+                return
+            }
+            restyleSelection { mark in
+                guard mark.kind != .image, mark.kind != .blur, mark.kind != .pixelate, mark.kind != .spotlight else { return }
+                mark.color = color
+            }
+        }
     }
 
     var strokeSize: StrokeSize = .medium {
-        didSet { if !isSyncingStyle { restyleSelection() } }
+        didSet {
+            guard !isSyncingStyle else { return }
+            restyleSelection { mark in
+                if mark.kind == .counter { mark.fontSize = fontSize } else if mark.kind != .text, mark.lineWidth > 0 {
+                    mark.lineWidth = strokeSize.rawValue * scale
+                }
+            }
+        }
+    }
+
+    var textSize: TextSize = .medium {
+        didSet {
+            guard !isSyncingStyle else { return }
+            if textEdit != nil {
+                textEdit?.fontSize = textFontSize
+                return
+            }
+            restyleSelection { mark in
+                guard mark.kind == .text else { return }
+                mark.textWidth = mark.textWidth.map { $0 * textFontSize / mark.fontSize }
+                mark.fontSize = textFontSize
+            }
+        }
+    }
+
+    var showsTextStyle: Bool {
+        tool == .text || textEdit != nil || selectedMark?.kind == .text
     }
 
     private(set) var selection: UUID? {
@@ -90,11 +130,38 @@ final class AnnotateModel {
     }
 
     private func startText(at point: CGPoint) {
-        textEdit = TextEdit(point: point, text: "")
+        let line = textFontSize * TextLayout.lineHeight
+        let room = min(pixelSize.width, textFontSize * 8)
+        let top = CGPoint(
+            x: max(0, min(point.x, pixelSize.width - room)),
+            y: max(0, min(point.y - line / 2, pixelSize.height - line))
+        )
+        textEdit = TextEdit(point: top, text: "", fontSize: textFontSize, color: color)
+    }
+
+    private func editText(_ mark: Annotation) {
+        selection = mark.id
+        textEdit = TextEdit(
+            point: mark.start, text: mark.text ?? "", id: mark.id,
+            fontSize: mark.fontSize, color: mark.color, width: mark.textWidth
+        )
     }
 
     private var defaultTextPoint: CGPoint {
-        CGPoint(x: pixelSize.width / 4, y: max(0, (pixelSize.height - fontSize) / 2))
+        CGPoint(x: pixelSize.width / 4, y: pixelSize.height / 2)
+    }
+
+    var textWrapLimit: Double {
+        guard let edit = textEdit else { return pixelSize.width }
+        return max(textFontSize, pixelSize.width - edit.point.x)
+    }
+
+    var editingFrame: CGRect? {
+        guard let edit = textEdit else { return nil }
+        let size = TextLayout.size(
+            of: edit.text, fontSize: edit.fontSize, wrap: edit.width ?? textWrapLimit, fixed: edit.width != nil
+        )
+        return CGRect(origin: edit.point, size: size)
     }
 
     func pointerDown(at point: CGPoint) {
@@ -175,7 +242,7 @@ final class AnnotateModel {
         case .select:
             dragOrigin = nil
             if !moved, let id = clickedSelectedText, let mark = document.annotations.first(where: { $0.id == id }) {
-                textEdit = TextEdit(point: mark.start, text: mark.text ?? "", id: id)
+                editText(mark)
             }
             clickedSelectedText = nil
         case .crop:
@@ -187,10 +254,10 @@ final class AnnotateModel {
                     tool = .select
                     selection = origin.id
                 } else if let mark = document.annotations.first(where: { $0.id == origin.id }) {
-                    textEdit = TextEdit(point: mark.start, text: mark.text ?? "", id: mark.id)
+                    editText(mark)
                 }
             } else {
-                textEdit = TextEdit(point: point, text: "")
+                startText(at: point)
             }
         case .counter:
             recordUndo()
@@ -226,14 +293,33 @@ final class AnnotateModel {
         guard let edit = textEdit else { return }
         textEdit = nil
         let text = edit.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var width = edit.width
+        if width == nil {
+            let limit = max(edit.fontSize, pixelSize.width - edit.point.x)
+            let natural = TextLayout.size(of: text, fontSize: edit.fontSize, wrap: nil, fixed: false).width
+            if natural > limit { width = limit }
+        }
         if let id = edit.id, let index = document.annotations.firstIndex(where: { $0.id == id }) {
-            recordUndo()
-            if text.isEmpty { document.annotations.remove(at: index) } else { document.annotations[index].text = text }
+            var mark = document.annotations[index]
+            mark.text = text
+            mark.color = edit.color
+            mark.fontSize = edit.fontSize
+            mark.textWidth = width
+            if text.isEmpty {
+                recordUndo()
+                document.annotations.remove(at: index)
+            } else if mark != document.annotations[index] {
+                recordUndo()
+                document.annotations[index] = mark
+            }
         } else if !text.isEmpty {
             recordUndo()
-            document.annotations.append(Annotation(
-                kind: .text, start: edit.point, end: edit.point, color: color, lineWidth: 0, text: text, fontSize: fontSize
-            ))
+            var mark = Annotation(
+                kind: .text, start: edit.point, end: edit.point, color: edit.color, lineWidth: 0,
+                text: text, fontSize: edit.fontSize
+            )
+            mark.textWidth = width
+            document.annotations.append(mark)
         }
         render()
     }
@@ -297,7 +383,7 @@ final class AnnotateModel {
         case .left: return .resize(.left)
         case .right: return .resize(.right)
         default:
-            guard mark.isBox else { return .crosshair }
+            guard mark.hasFrame else { return .crosshair }
             let point = mark.point(of: handle)
             let box = mark.box
             let top = point.y <= box.midY, left = point.x <= box.midX
@@ -383,17 +469,17 @@ final class AnnotateModel {
     }
 
     private var fontSize: Double { (8 + strokeSize.rawValue * 3) * scale }
+    private var textFontSize: Double { textSize.rawValue * scale }
 
     var selectedMark: Annotation? {
         guard let selection else { return nil }
         return document.annotations.first { $0.id == selection }
     }
 
-    private func restyleSelection() {
+    private func restyleSelection(_ change: (inout Annotation) -> Void) {
         guard let selection, let index = document.annotations.firstIndex(where: { $0.id == selection }) else { return }
         var mark = document.annotations[index]
-        mark.color = color
-        if mark.usesFontSize { mark.fontSize = fontSize } else if mark.lineWidth > 0 { mark.lineWidth = strokeSize.rawValue * scale }
+        change(&mark)
         guard mark != document.annotations[index] else { return }
         recordUndo()
         document.annotations[index] = mark
@@ -405,6 +491,13 @@ final class AnnotateModel {
         isSyncingStyle = true
         defer { isSyncingStyle = false }
         if mark.kind != .image, mark.kind != .blur, mark.kind != .pixelate, mark.kind != .spotlight { color = mark.color }
+        if mark.kind == .text {
+            let points = mark.fontSize / scale
+            if let nearest = TextSize.allCases.min(by: { abs($0.rawValue - points) < abs($1.rawValue - points) }) {
+                textSize = nearest
+            }
+            return
+        }
         let size = mark.usesFontSize ? (mark.fontSize / scale - 8) / 3 : mark.lineWidth / scale
         if let nearest = StrokeSize.allCases.min(by: { abs($0.rawValue - size) < abs($1.rawValue - size) }), size > 0 {
             strokeSize = nearest
@@ -423,29 +516,11 @@ final class AnnotateModel {
         render()
     }
 
-    var textPreview: Annotation? {
-        guard let edit = textEdit, !edit.text.isEmpty else { return nil }
-        let original = edit.id.flatMap { id in document.annotations.first { $0.id == id } }
-        return Annotation(
-            kind: .text, start: edit.point, end: edit.point, color: original?.color ?? color, lineWidth: 0,
-            text: edit.text, fontSize: original?.fontSize ?? fontSize
-        )
-    }
-
-    var textEditFontSize: Double {
-        let original = textEdit?.id.flatMap { id in document.annotations.first { $0.id == id } }
-        return original?.fontSize ?? fontSize
-    }
-
     private func render() {
         var all = document.annotations
         if let editing = textEdit?.id { all.removeAll { $0.id == editing } }
         var live: [Annotation] = []
         if let id = dragOrigin?.id, let mark = all.first(where: { $0.id == id }) { live.append(mark) }
-        if let preview = textPreview {
-            all.append(preview)
-            live.append(preview)
-        }
         if let draft {
             all.append(draft)
             live.append(draft)

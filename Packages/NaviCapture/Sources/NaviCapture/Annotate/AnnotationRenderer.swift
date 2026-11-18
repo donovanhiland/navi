@@ -82,23 +82,11 @@ final class AnnotationRenderer {
 
     private func paintedBounds(of mark: Annotation) -> CGRect {
         switch mark.kind {
-        case .text:
-            let size = ((mark.text ?? "") as NSString).size(withAttributes: textAttributes(for: mark))
-            return CGRect(origin: mark.start, size: size).union(mark.bounds)
         case .arrow, .line:
             return CaptureGeometry.rect(from: mark.start, to: mark.end)
         default:
             return mark.bounds.isNull ? CGRect(origin: mark.start, size: .zero) : mark.bounds
         }
-    }
-
-    private func textAttributes(for mark: Annotation) -> [NSAttributedString.Key: Any] {
-        [
-            .font: NSFont.systemFont(ofSize: CGFloat(mark.fontSize), weight: .bold),
-            .foregroundColor: NSColor(cgColor: mark.color.cgColor) ?? .red,
-            .strokeColor: NSColor.white,
-            .strokeWidth: -2.5,
-        ]
     }
 
     private func drawSelection(of mark: Annotation, imageWidth: CGFloat, context: CGContext) {
@@ -107,7 +95,7 @@ final class AnnotationRenderer {
         context.saveGState()
         context.setLineWidth(line)
         context.setStrokeColor(.white)
-        let outline = mark.isBox ? mark.box : mark.bounds.insetBy(dx: -6, dy: -6)
+        let outline = mark.hasFrame ? mark.box : mark.bounds.insetBy(dx: -6, dy: -6)
         if mark.kind != .arrow, mark.kind != .line {
             context.stroke(outline)
             context.setStrokeColor(blue)
@@ -162,7 +150,7 @@ final class AnnotationRenderer {
             stroke(mark.points, context: context)
             context.restoreGState()
         case .text:
-            (mark.text ?? "").draw(at: mark.start, withAttributes: textAttributes(for: mark))
+            TextLayout.draw(mark.text ?? "", at: mark.start, fontSize: mark.fontSize, color: mark.color, wrap: mark.textWidth)
         case .counter:
             let radius = CGFloat(mark.fontSize) * 0.8
             let circle = CGRect(x: mark.start.x - radius, y: mark.start.y - radius, width: radius * 2, height: radius * 2)

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import Testing
 
 @testable import NaviCapture
@@ -49,7 +50,9 @@ import Testing
         let model = try makeModel()
         model.pointerMoved(to: CGPoint(x: 120, y: 80))
         model.tool = .text
-        #expect(model.textEdit?.point == CGPoint(x: 120, y: 80))
+        let edit = try #require(model.textEdit)
+        #expect(edit.point.x == 120)
+        #expect(abs(edit.point.y + edit.fontSize * TextLayout.lineHeight / 2 - 80) < 0.01)
     }
 
     @Test func leavingTheImageForgetsTheMouse() throws {
@@ -73,7 +76,8 @@ import Testing
         model.tool = .text
         click(model, at: CGPoint(x: 50, y: 50))
         click(model, at: CGPoint(x: 200, y: 100))
-        #expect(model.textEdit?.point == CGPoint(x: 200, y: 100))
+        #expect(model.textEdit?.point.x == 200)
+        #expect(model.textEdit.map { $0.point.y < 100 && $0.point.y + $0.fontSize > 100 } == true)
         #expect(model.document.annotations.isEmpty)
     }
 
@@ -116,16 +120,142 @@ import Testing
         #expect(AnnotationTool.forShortcut("ab") == nil)
     }
 
-    @Test func typedTextLooksTheSameBeforeAndAfterCommit() throws {
+    @Test func typedTextKeepsItsPlaceAndStyleAfterCommit() throws {
         let model = try makeModel()
         type("Same", at: CGPoint(x: 40, y: 60), in: model)
-        let preview = try #require(model.textPreview)
+        let edit = try #require(model.textEdit)
+        let frame = try #require(model.editingFrame)
         model.finishText()
         let saved = try #require(model.document.annotations.last)
-        #expect(saved.start == preview.start)
-        #expect(saved.fontSize == preview.fontSize)
-        #expect(saved.color == preview.color)
-        #expect(saved.text == preview.text)
-        #expect(model.textPreview == nil)
+        #expect(saved.start == edit.point)
+        #expect(saved.fontSize == edit.fontSize)
+        #expect(saved.color == edit.color)
+        #expect(saved.text == "Same")
+        #expect(saved.bounds == frame)
+    }
+
+    @Test func typingPastTheRightEdgeWrapsInsideTheImage() throws {
+        let model = try makeModel()
+        type("one two three four five six seven eight nine ten", at: CGPoint(x: 250, y: 40), in: model)
+        let frame = try #require(model.editingFrame)
+        #expect(frame.maxX <= 400)
+        #expect(frame.height > 2 * model.textEdit!.fontSize * TextLayout.lineHeight)
+        model.finishText()
+        let saved = try #require(model.document.annotations.last)
+        #expect(abs((saved.textWidth ?? 0) - (400 - saved.start.x)) < 0.01)
+        #expect(saved.bounds.maxX <= 400)
+        #expect(abs(saved.bounds.height - frame.height) < 0.5)
+    }
+
+    @Test func textStartedAtTheRightEdgeStillHasRoom() throws {
+        let model = try makeModel()
+        model.tool = .text
+        click(model, at: CGPoint(x: 395, y: 40))
+        let edit = try #require(model.textEdit)
+        #expect(400 - edit.point.x >= edit.fontSize * 8 - 0.01)
+    }
+
+    @Test func shortTextGrowsWithItsWords() throws {
+        let model = try makeModel()
+        type("Hi", at: CGPoint(x: 20, y: 20), in: model)
+        let short = try #require(model.editingFrame)
+        model.textEdit?.text = "Hi there"
+        let long = try #require(model.editingFrame)
+        #expect(long.width > short.width)
+        #expect(long.height == short.height)
+        model.finishText()
+        #expect(model.document.annotations.last?.textWidth == nil)
+    }
+
+    @Test func narrowingTheBoxWrapsTheText() throws {
+        let model = try makeModel()
+        type("Wrap these words", at: CGPoint(x: 20, y: 20), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let oneLine = mark.bounds
+        let edge = mark.point(of: .right)
+        #expect(mark.handle(at: edge, tolerance: 4) == .right)
+        model.pointerDown(at: edge)
+        let target = CGPoint(x: oneLine.minX + oneLine.width / 2, y: edge.y)
+        model.pointerDragged(from: edge, to: target)
+        model.pointerUp(from: edge, to: target)
+        let narrow = try #require(model.selectedMark)
+        #expect(abs((narrow.textWidth ?? 0) - oneLine.width / 2) < 0.01)
+        #expect(abs(narrow.bounds.width - oneLine.width / 2) < 0.01)
+        #expect(narrow.bounds.height > oneLine.height)
+        #expect(narrow.start == mark.start)
+    }
+
+    @Test func draggingTheLeftEdgeKeepsTheRightEdge() throws {
+        let model = try makeModel()
+        type("Left edge", at: CGPoint(x: 60, y: 20), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let resized = mark.resized(.left, to: CGPoint(x: mark.bounds.minX + 10, y: 0))
+        #expect(resized.bounds.maxX == mark.bounds.maxX)
+        #expect(resized.start.x == mark.start.x + 10)
+    }
+
+    @Test func draggingACornerScalesTheFont() throws {
+        let model = try makeModel()
+        type("Scale", at: CGPoint(x: 20, y: 20), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let corner = mark.point(of: .end)
+        let bigger = mark.resized(.end, to: CGPoint(x: mark.bounds.minX + mark.bounds.width * 2, y: corner.y))
+        #expect(bigger.fontSize == mark.fontSize * 2)
+        #expect(bigger.start == mark.start)
+        let topLeft = mark.resized(.start, to: CGPoint(x: mark.bounds.maxX - mark.bounds.width / 2, y: mark.bounds.maxY - 1))
+        #expect(topLeft.fontSize == mark.fontSize / 2)
+        #expect(abs(topLeft.bounds.maxX - mark.bounds.maxX) <= 4)
+    }
+
+    @Test func textSizeAndColorChangeTheTextBeingTyped() throws {
+        let model = try makeModel()
+        type("Style", at: CGPoint(x: 20, y: 20), in: model)
+        model.textSize = .extraLarge
+        model.color = RGBA(red: 0, green: 0, blue: 1)
+        #expect(model.textEdit?.fontSize == TextSize.extraLarge.rawValue)
+        #expect(model.textEdit?.color == RGBA(red: 0, green: 0, blue: 1))
+        model.finishText()
+        let mark = try #require(model.document.annotations.last)
+        #expect(mark.fontSize == TextSize.extraLarge.rawValue)
+        #expect(mark.color == RGBA(red: 0, green: 0, blue: 1))
+    }
+
+    @Test func editingOldTextKeepsItsStyleAndSizeButtonsFollowIt() throws {
+        let model = try makeModel()
+        model.textSize = .large
+        type("Old", at: CGPoint(x: 20, y: 20), in: model)
+        model.finishText()
+        model.textSize = .small
+        let mark = try #require(model.selectedMark)
+        #expect(mark.fontSize == TextSize.small.rawValue)
+        click(model, at: CGPoint(x: mark.bounds.midX, y: mark.bounds.midY))
+        #expect(model.textEdit?.fontSize == TextSize.small.rawValue)
+        #expect(model.textSize == .small)
+        #expect(model.showsTextStyle)
+    }
+
+    @Test func colorChangeKeepsAScaledFontSize() throws {
+        let model = try makeModel()
+        type("Keep", at: CGPoint(x: 20, y: 20), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let corner = mark.point(of: .end)
+        model.pointerDown(at: corner)
+        let target = CGPoint(x: mark.bounds.minX + mark.bounds.width * 1.5, y: corner.y)
+        model.pointerDragged(from: corner, to: target)
+        model.pointerUp(from: corner, to: target)
+        let scaled = try #require(model.selectedMark).fontSize
+        model.color = RGBA(red: 0, green: 1, blue: 0)
+        #expect(model.selectedMark?.fontSize == scaled)
+        #expect(model.selectedMark?.color == RGBA(red: 0, green: 1, blue: 0))
+    }
+
+    @Test func oldMarkupWithoutAWrapWidthStillLoads() throws {
+        let json = #"{"annotations":[{"id":"6F1C3A52-3C1B-4D8B-9E7A-2B1F0C9D8E7A","kind":"text","start":[10,10],"end":[10,10],"points":[],"color":{"red":1,"green":0,"blue":0,"alpha":1},"lineWidth":0,"text":"Hi","fontSize":20}],"nextCounter":1}"#
+        let document = try JSONDecoder().decode(AnnotationDocument.self, from: Data(json.utf8))
+        #expect(document.annotations.first?.textWidth == nil)
     }
 }

@@ -60,4 +60,5 @@ struct ShotRequest {
     var copies = false
     var sourceApp: NSRunningApplication?
     var session: SelectionSession?
+    var prefetched: Task<CapturedImage, Error>?
 }

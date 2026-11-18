@@ -275,7 +275,12 @@ video editor.
   shot becomes the markup canvas in place (`Annotate/InPlaceAnnotator.swift`),
   with the toolbar floating below it (above it near the bottom, inside it when
   it fills the screen). No window or title bar. A window shot sits on the
-  window and its frame is locked; while it is taken, the dim overlay stays up.
+  window and its frame is locked; while it is taken, the dim overlay stays up. The window
+  under the pointer is captured while you hover it (`WindowPrefetch`, after
+  80 ms still), while its app is still frontmost so it looks active. A click on
+  that window uses the image and activates Navi at once, so tool keys and Esc
+  work right away; without a ready image, Navi captures after the click and
+  activates when the editor shows.
   For area and fullscreen shots the frame can still be
   fixed (`Annotate/FrameAdjuster.swift`): soft corner brackets sit just
   outside it; near the frame they grow, ticks show on all four edges, and a

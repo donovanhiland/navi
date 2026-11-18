@@ -50,6 +50,7 @@ public final class CaptureFeature {
     private let cards = CardStack()
     private let pins = PinBoard()
     private var session: SelectionSession?
+    private let windowPrefetch = WindowPrefetch()
     private var scrollSession: ScrollCaptureSession?
     private var inPlaceEditor: InPlaceAnnotator?
     private var editorStage: InPlaceAnnotator.Stage?
@@ -209,6 +210,8 @@ public final class CaptureFeature {
         session.holdsSelection = modeBar
         session.canRecord = onRecordRequest != nil
         session.editsAfterCapture = settings.editAfterCapture
+        windowPrefetch.reset()
+        session.onHoverWindow = { [weak self] id in self?.windowPrefetch.want(id) }
         self.session = session
         freeze.session = session
         CaptureTiming.mark("select", "session made")
@@ -268,6 +271,7 @@ public final class CaptureFeature {
         previousApp: NSRunningApplication?, copies: Bool, session ending: SelectionSession?
     ) {
         CaptureTiming.mark("shot", "selection ended")
+        defer { windowPrefetch.reset() }
         session = nil
         prepareAhead(after: 1)
         let frozen = frozenScreens
@@ -283,12 +287,22 @@ public final class CaptureFeature {
                 return
             case let .window(id, screen):
                 ending?.holdOverlay()
-                previousApp?.activate()
+                let ready = windowPrefetch.readyImage(for: id)
+                let pending = windowPrefetch.pending(for: id)
+                windowPrefetch.reset()
+                if ready != nil { NSApp.activate() } else { previousApp?.activate() }
                 let frame = ending?.windows.first { $0.id == id }?.frame
-                shoot(ShotRequest(
+                var request = ShotRequest(
                     source: .window(id, frame: frame), screen: screen, edits: true, backdrop: backdrop(screen),
                     copies: copies, sourceApp: previousApp, session: ending
-                ))
+                )
+                if let ready {
+                    request.prefetched = Task { ready }
+                } else {
+                    request.prefetched = pending
+                }
+                CaptureTiming.mark("shot", ready == nil ? "window click, capturing" : "window click, prefetched")
+                shoot(request)
                 return
             case let .fullscreen(screen):
                 if let shot = frozen.first(where: { $0.0 == screen })?.1 {
@@ -366,7 +380,7 @@ public final class CaptureFeature {
                 watchdog?.cancel()
                 request.session?.releaseOverlay()
             }
-            if request.source.waitsForApp { await Self.waitUntilActive(request.sourceApp) }
+            if request.source.waitsForApp, request.prefetched == nil { await Self.waitUntilActive(request.sourceApp) }
             await Countdown.run(seconds: request.timer, on: request.screen)
             do {
                 route(try await grab(request), request)
@@ -383,7 +397,9 @@ public final class CaptureFeature {
         case let .frozen(captured, _): return captured
         case .screen: return try await ScreenGrabber.capture(request.screen, hideDesktopIcons: hideIcons)
         case let .rect(rect): return try await ScreenGrabber.capture(request.screen, rect: rect, hideDesktopIcons: hideIcons)
-        case let .window(id, _): return try await ScreenGrabber.captureWindow(id: id)
+        case let .window(id, _):
+            if let prefetched = request.prefetched, let image = try? await prefetched.value { return image }
+            return try await ScreenGrabber.captureWindow(id: id)
         }
     }
 

@@ -155,6 +155,7 @@ final class SelectionSession {
     }
 
     var editsAfterCapture = false
+    var onHoverWindow: ((CGWindowID?) -> Void)?
 
     var keepsOverlayUntilDone: Bool { editsAfterCapture && purpose == .screenshot && timer == 0 }
 
@@ -496,6 +497,7 @@ final class OverlayView: NSView {
             return
         }
         let target = clickTarget
+        if session?.keepsOverlayUntilDone == true { session?.onHoverWindow?(target?.id) }
         highlight.show(target, rect: target.map { $0.frame.intersection(bounds) }, animated: highlightSettled)
         if session?.windowsLoaded == true { highlightSettled = true }
     }

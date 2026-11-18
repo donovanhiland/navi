@@ -41,7 +41,7 @@ struct AnnotateCanvas: View {
                     }
                 }
                 .frame(width: shown.width, height: shown.height, alignment: .topLeading)
-                .contentShape(Rectangle())
+                .contentShape(HandleReach(spots: model.handleSpots.map { CGPoint(x: $0.x * fit, y: $0.y * fit) }))
                 .gesture(drawGesture(fit: fit))
                 .onContinuousHover { phase in
                     switch phase {
@@ -166,6 +166,21 @@ struct AnnotateCanvas: View {
                 return
             }
         }
+    }
+}
+
+struct HandleReach: Shape {
+    static let radius: CGFloat = 10
+    let spots: [CGPoint]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        for spot in spots {
+            path.addEllipse(in: CGRect(
+                x: spot.x - Self.radius, y: spot.y - Self.radius, width: Self.radius * 2, height: Self.radius * 2
+            ))
+        }
+        return path
     }
 }
 

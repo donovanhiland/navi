@@ -187,7 +187,7 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     }
 
     public func handle(at point: CGPoint, tolerance: Double) -> Handle? {
-        let tolerance = kind == .text ? min(tolerance, min(box.width, box.height) / 4) : tolerance
+        let tolerance = kind == .text && box.contains(point) ? min(tolerance, min(box.width, box.height) / 4) : tolerance
         let corner = handles.filter { !$0.isEdge }.first {
             hypot(self.point(of: $0).x - point.x, self.point(of: $0).y - point.y) <= tolerance
         }

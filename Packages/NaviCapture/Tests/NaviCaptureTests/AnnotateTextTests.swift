@@ -283,6 +283,19 @@ import Testing
         #expect(smaller.start == mark.start)
     }
 
+    @Test func textHandlesReachPastTheBoxEvenOnShortText() throws {
+        let model = try makeModel()
+        type("Hi", at: CGPoint(x: 100, y: 100), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let right = mark.point(of: .right)
+        #expect(mark.handle(at: CGPoint(x: right.x + 8, y: right.y), tolerance: 10) == .right)
+        let corner = mark.point(of: .end)
+        #expect(mark.handle(at: CGPoint(x: corner.x + 6, y: corner.y + 6), tolerance: 10) == .end)
+        #expect(model.handlePointer(at: CGPoint(x: right.x + 8, y: right.y)) == .resize(.right))
+        #expect(model.handleSpots.count == mark.handles.count)
+    }
+
     @Test func oldMarkupWithoutAWrapWidthStillLoads() throws {
         let json = #"{"annotations":[{"id":"6F1C3A52-3C1B-4D8B-9E7A-2B1F0C9D8E7A","kind":"text","start":[10,10],"end":[10,10],"points":[],"color":{"red":1,"green":0,"blue":0,"alpha":1},"lineWidth":0,"text":"Hi","fontSize":20}],"nextCounter":1}"#
         let document = try JSONDecoder().decode(AnnotationDocument.self, from: Data(json.utf8))

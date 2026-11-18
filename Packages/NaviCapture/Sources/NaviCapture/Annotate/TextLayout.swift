@@ -17,8 +17,6 @@ enum TextLayout {
         return [
             .font: font(size: fontSize),
             .foregroundColor: NSColor(cgColor: color.cgColor) ?? .red,
-            .strokeColor: NSColor.white,
-            .strokeWidth: -2.5,
             .paragraphStyle: paragraph,
         ]
     }

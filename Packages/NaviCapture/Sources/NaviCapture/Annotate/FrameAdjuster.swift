@@ -7,6 +7,7 @@ struct FrameAdjuster: View {
     let screenSize: CGSize
     let canAdjust: Bool
     let reveal: CGFloat
+    var keepClear: [CGPoint] = []
     let onDragging: (Bool) -> Void
     let onChange: (CGRect) -> Void
 
@@ -49,7 +50,7 @@ struct FrameAdjuster: View {
         let outer = frame.insetBy(dx: -Self.grab, dy: -Self.grab)
         let inner = frame.insetBy(dx: Self.grabInside, dy: Self.grabInside)
         return Color.clear
-            .contentShape(GrabRing(outer: outer, inner: inner), eoFill: true)
+            .contentShape(GrabRing(outer: outer, inner: inner, keepClear: keepClear))
             .gesture(
                 DragGesture(minimumDistance: 1, coordinateSpace: .named(InPlaceAnnotateView.space))
                     .onChanged { value in
@@ -199,10 +200,16 @@ private struct FrameTicks: Shape {
 private struct GrabRing: Shape {
     let outer: CGRect
     let inner: CGRect
+    var keepClear: [CGPoint] = []
 
     func path(in _: CGRect) -> Path {
         var path = Path(outer)
-        if !inner.isNull, inner.width > 0, inner.height > 0 { path.addRect(inner) }
-        return path
+        if !inner.isNull, inner.width > 0, inner.height > 0 { path = path.subtracting(Path(inner)) }
+        guard !keepClear.isEmpty else { return path }
+        let r = HandleReach.radius
+        let spots = Path { spots in
+            for spot in keepClear { spots.addEllipse(in: CGRect(x: spot.x - r, y: spot.y - r, width: r * 2, height: r * 2)) }
+        }
+        return path.subtracting(spots)
     }
 }

@@ -263,6 +263,7 @@ struct InPlaceAnnotateView: View {
             screenSize: screen,
             canAdjust: backdrop != nil && model.placement?.canReframe == true,
             reveal: revealOverride ?? reveal,
+            keepClear: model.handleSpots.map { CGPoint(x: hole.minX + $0.x / model.scale, y: hole.minY + $0.y / model.scale) },
             onDragging: { dragging in
                 if dragging { model.beginReframe() }
                 isDraggingFrame = dragging
@@ -276,7 +277,9 @@ struct InPlaceAnnotateView: View {
     }
 
     private func currentPointer(at point: CGPoint, hole: CGRect, toolbar: CGRect) -> AnnotateModel.Pointer {
-        Self.pointer(
+        let pixel = CGPoint(x: (point.x - hole.minX) * model.scale, y: (point.y - hole.minY) * model.scale)
+        if !toolbar.contains(point), let handle = model.handlePointer(at: pixel) { return handle }
+        return Self.pointer(
             at: point, hole: hole, toolbar: toolbar,
             canAdjust: backdrop != nil && model.placement?.canReframe == true,
             showsMoveTab: (revealOverride ?? reveal) > 0,

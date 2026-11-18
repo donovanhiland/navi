@@ -365,6 +365,18 @@ final class AnnotateModel {
         }
     }
 
+    func handlePointer(at point: CGPoint) -> Pointer? {
+        guard let mark = selectedMark, textEdit == nil, cropRect == nil,
+              let handle = mark.handle(at: point, tolerance: 10 * scale)
+        else { return nil }
+        return Self.resizePointer(handle, of: mark)
+    }
+
+    var handleSpots: [CGPoint] {
+        guard let mark = selectedMark, textEdit == nil, cropRect == nil else { return [] }
+        return mark.handles.map { mark.point(of: $0) }
+    }
+
     func dragPointer(at point: CGPoint) -> Pointer {
         if let resizing, let mark = selectedMark { return Self.resizePointer(resizing, of: mark) }
         if dragOrigin != nil { return .closedHand }

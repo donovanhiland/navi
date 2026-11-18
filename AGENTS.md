@@ -313,7 +313,7 @@ video editor.
   else a quarter in from the left); a click elsewhere moves an empty box; a click
   outside keeps the text and selects it; drag text with the text or select
   tool; click selected text to edit it; Esc or `⌘Return` ends typing, Return
-  adds a line. Text works like Excalidraw: the box grows as you type and wraps
+  adds a line. The text box grows as you type and wraps
   at the image's right edge; on selected text, the left and right handles set a
   wrap width (`Annotation.textWidth`) and the corners scale the font. With the
   text tool or text selected, the toolbar shows S/M/L/XL text sizes instead of

@@ -187,6 +187,7 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
     }
 
     public func handle(at point: CGPoint, tolerance: Double) -> Handle? {
+        let tolerance = kind == .text ? min(tolerance, min(box.width, box.height) / 4) : tolerance
         let corner = handles.filter { !$0.isEdge }.first {
             hypot(self.point(of: $0).x - point.x, self.point(of: $0).y - point.y) <= tolerance
         }
@@ -223,9 +224,11 @@ public struct Annotation: Codable, Identifiable, Equatable, Sendable {
             let anchorBottom = handle == .start || handle == .endXStartY
             let anchorX = anchorRight ? frame.maxX : frame.minX
             let anchorY = anchorBottom ? frame.maxY : frame.minY
-            let wide = abs(point.x - anchorX) / max(frame.width, 1)
-            let tall = abs(point.y - anchorY) / max(frame.height, 1)
-            let factor = max(max(wide, tall), Self.smallestFontSize / fontSize)
+            let grabbed = self.point(of: handle)
+            let diagonal = CGVector(dx: grabbed.x - anchorX, dy: grabbed.y - anchorY)
+            let length = max(diagonal.dx * diagonal.dx + diagonal.dy * diagonal.dy, 1)
+            let along = ((point.x - anchorX) * diagonal.dx + (point.y - anchorY) * diagonal.dy) / length
+            let factor = max(along, Self.smallestFontSize / fontSize)
             copy.fontSize = fontSize * factor
             copy.textWidth = textWidth.map { $0 * factor }
             let size = CGSize(width: frame.width * factor, height: frame.height * factor)

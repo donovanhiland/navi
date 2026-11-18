@@ -134,7 +134,11 @@ struct AnnotateCanvas: View {
     private func textBox(_ edit: AnnotateModel.TextEdit, frame: CGRect, fit: CGFloat) -> some View {
         let caret = edit.fontSize * 0.25
         let size = CGSize(width: (frame.width + caret) * fit, height: frame.height * fit)
-        return TextBoxView(model: model, fit: fit, size: CGSize(width: frame.width + caret, height: frame.height))
+        return TextBoxView(
+            model: model, text: edit.text, fontSize: edit.fontSize, color: edit.color,
+            wrap: edit.width ?? model.textWrapLimit, fit: fit,
+            size: CGSize(width: frame.width + caret, height: frame.height)
+        )
             .id(edit.session)
             .frame(width: size.width, height: size.height)
             .background(
@@ -214,6 +218,10 @@ private struct MarkOutline: View {
 
 private struct TextBoxView: NSViewRepresentable {
     let model: AnnotateModel
+    let text: String
+    let fontSize: Double
+    let color: RGBA
+    let wrap: Double
     let fit: CGFloat
     let size: CGSize
 
@@ -226,11 +234,7 @@ private struct TextBoxView: NSViewRepresentable {
     }
 
     func updateNSView(_ host: TextBoxHost, context: Context) {
-        guard let edit = model.textEdit else { return }
-        host.update(
-            text: edit.text, fontSize: edit.fontSize, color: edit.color,
-            wrap: edit.width ?? model.textWrapLimit, size: size, fit: fit
-        )
+        host.update(text: text, fontSize: fontSize, color: color, wrap: wrap, size: size, fit: fit)
     }
 
     @MainActor
@@ -266,6 +270,9 @@ final class TextBoxHost: NSView {
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
         textView.isAutomaticTextReplacementEnabled = false
+        textView.isContinuousSpellCheckingEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.isGrammarCheckingEnabled = false
         textView.textContainer?.lineFragmentPadding = 0
         textView.textContainer?.widthTracksTextView = false
         textView.textContainer?.heightTracksTextView = false

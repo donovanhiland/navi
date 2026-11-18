@@ -201,12 +201,12 @@ import Testing
         type("Scale", at: CGPoint(x: 20, y: 20), in: model)
         model.finishText()
         let mark = try #require(model.selectedMark)
-        let corner = mark.point(of: .end)
-        let bigger = mark.resized(.end, to: CGPoint(x: mark.bounds.minX + mark.bounds.width * 2, y: corner.y))
-        #expect(bigger.fontSize == mark.fontSize * 2)
+        let frame = mark.bounds
+        let bigger = mark.resized(.end, to: CGPoint(x: frame.minX + frame.width * 2, y: frame.minY + frame.height * 2))
+        #expect(abs(bigger.fontSize - mark.fontSize * 2) < 0.01)
         #expect(bigger.start == mark.start)
-        let topLeft = mark.resized(.start, to: CGPoint(x: mark.bounds.maxX - mark.bounds.width / 2, y: mark.bounds.maxY - 1))
-        #expect(topLeft.fontSize == mark.fontSize / 2)
+        let topLeft = mark.resized(.start, to: CGPoint(x: frame.maxX - frame.width / 2, y: frame.maxY - frame.height / 2))
+        #expect(abs(topLeft.fontSize - mark.fontSize / 2) < 0.01)
         #expect(abs(topLeft.bounds.maxX - mark.bounds.maxX) <= 4)
     }
 
@@ -251,6 +251,36 @@ import Testing
         model.color = RGBA(red: 0, green: 1, blue: 0)
         #expect(model.selectedMark?.fontSize == scaled)
         #expect(model.selectedMark?.color == RGBA(red: 0, green: 1, blue: 0))
+    }
+
+    @Test func shortTextCanStillBeClickedAndDragged() throws {
+        let model = try makeModel()
+        type("Hi", at: CGPoint(x: 100, y: 100), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let middle = CGPoint(x: mark.bounds.midX, y: mark.bounds.midY)
+        #expect(mark.handle(at: middle, tolerance: 10) == nil)
+        click(model, at: middle)
+        #expect(model.textEdit?.id == mark.id)
+        model.finishText()
+        let drop = CGPoint(x: middle.x + 50, y: middle.y + 30)
+        model.pointerDown(at: middle)
+        model.pointerDragged(from: middle, to: drop)
+        model.pointerUp(from: middle, to: drop)
+        let moved = try #require(model.document.annotations.first { $0.id == mark.id })
+        #expect(moved.start == CGPoint(x: mark.start.x + 50, y: mark.start.y + 30))
+        #expect(moved.fontSize == mark.fontSize)
+    }
+
+    @Test func draggingACornerInwardAlongOneSideShrinks() throws {
+        let model = try makeModel()
+        type("Shrink me", at: CGPoint(x: 20, y: 20), in: model)
+        model.finishText()
+        let mark = try #require(model.selectedMark)
+        let corner = mark.point(of: .end)
+        let smaller = mark.resized(.end, to: CGPoint(x: corner.x - mark.bounds.width / 2, y: corner.y))
+        #expect(smaller.fontSize < mark.fontSize)
+        #expect(smaller.start == mark.start)
     }
 
     @Test func oldMarkupWithoutAWrapWidthStillLoads() throws {

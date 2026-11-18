@@ -419,6 +419,7 @@ cd Packages/NaviCore && swift test      # unit tests, run directly
 cd Packages/NaviCapture && swift test   # capture, markup, stitch, background tests
 NAVI_SNAPSHOTS=/tmp/navi-snaps swift test --filter EditorSnapshot  # in NaviCapture: draws the markup editor to PNGs (760/1000/1400 wide, dark and light) and edit after capture (1440 × 900; NAVI_BACKDROP=<png> for a real screen behind it) to check their look
 NAVI_TOOLTIP_FRAMES=/tmp/navi-tips swift test --filter TooltipDemo  # in NaviCapture: records the toolbar tooltips as 30 fps PNG frames, for a video
+NAVI_TEXT_FRAMES=/tmp/navi-text swift test --filter TextDemo  # in NaviCapture: records the text tool (type, wrap, size, color, side and corner handles) as 30 fps PNG frames
 cd Packages/NaviRecording && swift test # recording math, GIF, audio mixdown
 cd Packages/NaviDictation && swift test # cleanup rules, fn gestures, Talk Key, fn setting, scoring
 cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--failures] [--save]

@@ -50,6 +50,9 @@ struct EditorSnapshotTests {
             model.pointerMoved(to: step == "wrapped" || step == "committed" ? CGPoint(x: 1900, y: 300) : nil)
             model.tool = .select
             model.tool = .text
+            let spot = step == "wrapped" || step == "committed" ? CGPoint(x: 1900, y: 300) : CGPoint(x: 300, y: 350)
+            model.pointerDown(at: spot)
+            model.pointerUp(from: spot, to: spot)
             model.textEdit?.text = text
             if step == "committed" { model.finishText() }
             let view = NSHostingView(rootView: AnnotateView(model: model, onDone: {}, onCancel: {}))

@@ -313,9 +313,8 @@ video editor.
   while the history file is still that markup's flat image.
 - Markup editor keys: V select, A arrow, R rectangle, F filled rectangle,
   O ellipse, L line, P pencil, H highlighter, T text, N counter, B blur,
-  X pixelate, S spotlight, C crop. Text: picking the tool opens a box with
-  the caret in it, no click needed (at the mouse if it is over the image,
-  else a quarter in from the left); a click elsewhere moves an empty box; a click
+  X pixelate, S spotlight, C crop. Text: picking the tool (T) opens nothing; a click
+  opens a box there with the caret in it, ready to type; a click elsewhere moves an empty box; a click
   outside keeps the text and selects it; drag text with the text or select
   tool; click selected text to edit it; Esc or `⌘Return` ends typing, Return
   adds a line. The text box grows as you type and wraps

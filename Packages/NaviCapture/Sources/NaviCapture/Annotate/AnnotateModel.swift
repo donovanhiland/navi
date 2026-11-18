@@ -41,7 +41,6 @@ final class AnnotateModel {
             if tool != .select { selection = nil }
             if tool != .crop { cropRect = nil }
             commitText()
-            if tool == .text, oldValue != .text { startText(at: hoverPoint ?? defaultTextPoint) }
             render()
         }
     }
@@ -145,10 +144,6 @@ final class AnnotateModel {
             point: mark.start, text: mark.text ?? "", id: mark.id,
             fontSize: mark.fontSize, color: mark.color, width: mark.textWidth
         )
-    }
-
-    private var defaultTextPoint: CGPoint {
-        CGPoint(x: pixelSize.width / 4, y: pixelSize.height / 2)
     }
 
     var textWrapLimit: Double {

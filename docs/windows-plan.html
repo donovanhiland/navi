@@ -1,0 +1,1590 @@
+<title>Navi for Windows</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: sticky tab header, then one tab at a time. Prototype tab is a scaled 1100 x 690 Windows 11 screen with a side guide. Dark only, like docs/capture-plan.html. */
+  :root {
+    --bg: #111214; --panel: #1b1c1f; --line: #2c2d31; --text: #e8e8ea; --dim: #9a9ba1;
+    --accent: #3b82f6; --red: #ef4444; --green: #22c55e; --amber: #f59e0b; --violet: #c4b5fd;
+    --navi-surface: #2a2b2ff0; --navi-hover: #3b82f6;
+    --win-chrome: #202020; --win-chrome-2: #2b2b2b; --win-text: #e6e6e6;
+    --font-ui: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-display: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", -apple-system, system-ui, sans-serif;
+    --font-mono: "Cascadia Mono", "Cascadia Code", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--font-ui); }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  header { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 12px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 500; }
+  header h1 { font: 600 16px var(--font-display); margin: 0; }
+  header h1 span { color: var(--dim); font-weight: 400; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button { background: none; border: 1px solid transparent; color: var(--dim); padding: 6px 12px; border-radius: 7px; cursor: pointer; font: inherit; }
+  nav button.on { color: var(--text); border-color: var(--line); background: var(--panel); }
+  nav button:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  section.tab { padding-block: 20px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .hint { color: var(--dim); margin: 0 0 14px; max-width: 900px; }
+  .hint b { color: var(--text); }
+  kbd { font: 12px var(--font-mono); background: #26272b; border: 1px solid #36373c; border-bottom-width: 2px; padding: 0 5px; border-radius: 4px; white-space: nowrap; color: var(--text); }
+
+  /* ---------- prototype frame ---------- */
+  .proto-wrap { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .stage-col { flex: 1 1 700px; min-width: 0; max-width: 1100px; }
+  .scaler { position: relative; overflow: hidden; border-radius: 10px; }
+  #screen { position: absolute; left: 0; top: 0; width: 1100px; height: 690px; transform-origin: 0 0; overflow: hidden; user-select: none; box-shadow: 0 0 0 1px #333; font-family: var(--font-ui); color: var(--win-text); }
+  #desktop { position: absolute; left: 0; top: 0; width: 1100px; height: 646px; overflow: hidden; background:
+      radial-gradient(60% 80% at 62% 58%, #6aa6ff 0%, #2f6bd8 26%, transparent 58%),
+      radial-gradient(40% 50% at 40% 70%, #8f7bff99 0%, transparent 70%),
+      linear-gradient(160deg, #0b1a3a 0%, #102a63 50%, #0d1f4a 100%); }
+  .icons { position: absolute; left: 10px; top: 10px; display: grid; grid-template-rows: repeat(5, 78px); grid-auto-flow: column; gap: 4px; }
+  .dicon { width: 74px; text-align: center; font-size: 11px; color: #fff; text-shadow: 0 1px 2px #000; }
+  .dicon svg { display: block; margin: 4px auto 3px; }
+
+  .win { position: absolute; background: #1f1f1f; border-radius: 8px; box-shadow: 0 0 0 1px #ffffff1a, 0 16px 40px #0008; overflow: hidden; color: #ddd; }
+  .win .tbar { height: 32px; background: var(--win-chrome); display: flex; align-items: center; font-size: 12px; color: #ccc; padding-left: 12px; gap: 8px; }
+  .win .tbar .app { width: 14px; height: 14px; border-radius: 3px; flex: none; }
+  .win .tbar .ctl { margin-left: auto; display: flex; height: 100%; }
+  .win .tbar .ctl i { width: 44px; display: flex; align-items: center; justify-content: center; font-style: normal; }
+  .win .tbar .ctl i:last-child:hover { background: #c42b1c; }
+  .win .body { padding: 12px 14px; font-size: 12.5px; line-height: 1.55; height: calc(100% - 32px); overflow: hidden; }
+  .win.notepad .body { background: #272727; font: 13px var(--font-mono); color: #eee; white-space: pre-wrap; }
+  .win.notepad .menu-row { height: 28px; background: #202020; display: flex; gap: 16px; padding: 0 12px; align-items: center; font-size: 12px; color: #bbb; border-bottom: 1px solid #333; }
+  .caret { display: inline-block; width: 1px; height: 15px; background: #fff; vertical-align: -2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .win.term .body { background: #0c0c0c; font: 12px var(--font-mono); color: #cccccc; }
+  .win.term .body p { margin: 0; }
+  .win.term .ok { color: #16c60c; }
+  .win.chat .body { display: flex; flex-direction: column; background: #1a1d21; }
+  .msgs { flex: 1; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; gap: 8px; }
+  .msg { font-size: 12px; } .msg b { color: #fff; }
+  .msg .att { margin-top: 4px; border-radius: 6px; overflow: hidden; border: 1px solid #333; position: relative; }
+  .dropzone { margin-top: 8px; border: 1.5px dashed #555; border-radius: 8px; padding: 9px; text-align: center; color: #888; font-size: 12px; }
+  .dropzone.over { border-color: var(--accent); color: #fff; background: #3b82f622; }
+  .win.hl { box-shadow: 0 0 0 3px var(--accent), 0 16px 40px #0008; }
+
+  /* taskbar */
+  .taskbar { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: #1c1c1ce6; backdrop-filter: blur(30px); border-top: 1px solid #ffffff14; display: flex; align-items: center; z-index: 300; font-size: 12px; }
+  .tb-center { position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; align-items: center; }
+  .tb-btn { width: 40px; height: 36px; border-radius: 5px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .tb-btn:hover { background: #ffffff14; }
+  .tb-btn.run::after { content: ""; position: absolute; bottom: 2px; width: 6px; height: 3px; border-radius: 2px; background: #9a9a9a; }
+  .tb-search { width: 150px; height: 32px; border-radius: 16px; background: #ffffff12; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #aaa; }
+  .tray { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-right: 8px; height: 100%; }
+  .tray > span { height: 36px; min-width: 28px; padding: 0 6px; border-radius: 5px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .tray > span:hover, .tray > span.open { background: #ffffff14; }
+  #naviTray { cursor: pointer; }
+  #recTray { display: none; background: var(--red); color: #fff; cursor: pointer; font-variant-numeric: tabular-nums; font-weight: 600; height: 26px !important; }
+  #recTray.on { display: flex; }
+  #recTray:hover { background: #dc2626 !important; }
+  .clock { flex-direction: column; line-height: 1.25; text-align: right; align-items: flex-end !important; font-size: 11.5px; }
+
+  /* Navi menu and settings: same look as the macOS build */
+  .navi-pop { position: absolute; bottom: 50px; right: 120px; width: 300px; background: var(--navi-surface); backdrop-filter: blur(30px) saturate(1.4); border-radius: 10px; padding: 5px; z-index: 320; box-shadow: 0 0 0 1px #0008, 0 0 0 1.5px #ffffff10 inset, 0 12px 30px #0009; display: none; font-size: 13px; color: #eee; }
+  .navi-pop.on { display: block; animation: popUp .16s ease-out; }
+  @keyframes popUp { from { opacity: 0; transform: translateY(6px); } }
+  .navi-pop .item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+  .navi-pop .item:hover { background: var(--navi-hover); color: #fff; }
+  .navi-pop .item .k { color: #999; font-size: 11.5px; white-space: nowrap; }
+  .navi-pop .item:hover .k { color: #fff; }
+  .navi-pop hr { border: 0; border-top: 1px solid #ffffff1a; margin: 4px 8px; }
+  .navi-pop .sect { color: #8d8e94; font-size: 11px; font-weight: 600; padding: 6px 10px 2px; letter-spacing: .03em; }
+  #settings { width: 340px; max-height: 600px; overflow-y: auto; }
+  .sw { width: 30px; height: 17px; border-radius: 9px; background: #4a4b50; position: relative; flex: none; transition: background .15s; }
+  .sw::after { content: ""; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .15s; }
+  .sw.on { background: var(--accent); }
+  .sw.on::after { transform: translateX(13px); }
+  .seg { display: flex; background: #1a1b1e; border-radius: 6px; padding: 2px; gap: 2px; }
+  .seg b { font-weight: 500; font-size: 11.5px; padding: 1px 8px; border-radius: 4px; color: #aaa; }
+  .seg b.on { background: #4a4b50; color: #fff; }
+  .navi-pop .item:hover .seg b { color: #dde; }
+  .navi-pop .note { color: #8d8e94; font-size: 11.5px; padding: 2px 10px 6px; line-height: 1.4; }
+  .pbtn { background: #ffffff1f; border-radius: 5px; padding: 0 8px; font-size: 11.5px; }
+
+  /* capture overlay */
+  #overlay { position: absolute; left: 0; top: 0; width: 1100px; height: 690px; z-index: 400; display: none; cursor: crosshair; }
+  #overlay.on { display: block; }
+  #overlay .dim { position: absolute; inset: 0; background: #0006; }
+  #overlay .xh, #overlay .yh { position: absolute; background: #fff9; pointer-events: none; }
+  #overlay .xh { height: 1px; left: 0; right: 0; } #overlay .yh { width: 1px; top: 0; bottom: 0; }
+  #sel { position: absolute; border: 1px solid #fff; box-shadow: 0 0 0 9999px #0006; display: none; pointer-events: none; }
+  #overlay.selecting .dim { display: none; }
+  #selSize { position: absolute; background: #000c; color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; pointer-events: none; display: none; font-variant-numeric: tabular-nums; }
+  #mag { position: absolute; width: 92px; height: 112px; pointer-events: none; }
+  #mag .lens { position: relative; width: 92px; height: 92px; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1.5px #fff, 0 6px 16px #0009; background: #000; }
+  #mag .zoom { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+  #mag .grid { position: absolute; inset: 0; background-image: linear-gradient(#0003 1px, transparent 1px), linear-gradient(90deg, #0003 1px, transparent 1px); background-size: 8.36px 8.36px; }
+  #mag .px { position: absolute; left: 41.8px; top: 41.8px; width: 8.36px; height: 8.36px; outline: 1px solid #fff; box-shadow: 0 0 0 2px #000; }
+  #mag .strip { margin-top: 4px; height: 16px; border-radius: 5px; background: #000d; color: #fff; font: 10px var(--font-mono); display: flex; align-items: center; gap: 5px; padding: 0 5px; }
+  #mag .strip i { width: 9px; height: 9px; border-radius: 2px; box-shadow: 0 0 0 1px #fff6; }
+  .modeTag { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); background: #000c; color: #fff; padding: 5px 12px; border-radius: 14px; font-size: 12px; pointer-events: none; white-space: nowrap; }
+  #overlay.windowMode { cursor: default; }
+  #overlay.windowMode .dim, #overlay.windowMode .xh, #overlay.windowMode .yh, #overlay.windowMode #mag { display: none; }
+  #winHl { position: absolute; background: #3b82f644; border: 2px solid var(--accent); border-radius: 9px; pointer-events: none; display: none; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 450; transition: opacity .25s; }
+
+  /* all-in-one bar */
+  #aio { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); display: none; gap: 2px; align-items: center; background: #26272bf5; border-radius: 12px; padding: 5px; box-shadow: 0 0 0 1px #ffffff14, 0 14px 34px #000b; z-index: 420; font-size: 12px; color: #ddd; cursor: default; }
+  #aio.on { display: flex; }
+  #aio button { background: none; border: 0; color: #ccc; height: 44px; min-width: 60px; padding: 0 8px; border-radius: 8px; cursor: pointer; font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  #aio button:hover { background: #ffffff12; }
+  #aio button.on { background: #ffffff22; color: #fff; }
+  #aio .sep { width: 1px; height: 30px; background: #ffffff1a; margin: 0 4px; }
+  #aio .go { background: var(--accent) !important; color: #fff; font-weight: 600; flex-direction: row; padding: 0 16px; }
+
+  /* cards */
+  #cards { position: absolute; left: 16px; bottom: 60px; display: flex; flex-direction: column-reverse; gap: 10px; z-index: 350; }
+  .card { width: 210px; height: 132px; border-radius: 10px; background: #222; position: relative; overflow: hidden; box-shadow: 0 0 0 1px #ffffff22, 0 10px 30px #000a; animation: slideIn .42s cubic-bezier(.2,.9,.3,1.25); cursor: grab; }
+  @keyframes slideIn { from { transform: translateX(-240px); } to { transform: none; } }
+  .card .thumb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #2a2a2e; }
+  .card .hover { position: absolute; inset: 0; background: #ffffff26; backdrop-filter: blur(10px) saturate(.8); opacity: 0; transition: opacity .15s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .card:hover .hover { opacity: 1; }
+  .card .big { background: #ffffffe6; color: #111; border: 0; border-radius: 999px; padding: 6px 0; width: 84px; font: 600 13px var(--font-ui); cursor: pointer; }
+  .card .big:hover { background: #fff; }
+  .card .corner { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: #ffffffcc; color: #111; border: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+  .card .corner:hover { background: #fff; }
+  .card .tl { top: 6px; left: 6px; } .card .tr { top: 6px; right: 6px; } .card .bl { bottom: 6px; left: 6px; } .card .br { bottom: 6px; right: 6px; }
+  .card .badge { position: absolute; left: 6px; bottom: 6px; background: #000b; color: #fff; font-size: 10.5px; padding: 1px 6px; border-radius: 4px; z-index: 2; pointer-events: none; font-variant-numeric: tabular-nums; }
+  .card:hover .badge { display: none; }
+  .card .fmt { display: flex; gap: 4px; }
+  .card .fmt button { background: #ffffff33; color: #fff; border: 0; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; font-family: inherit; }
+  .card .fmt button.on { background: #fff; color: #111; }
+
+  .shot { position: relative; overflow: hidden; }
+  .shot > .clip { position: absolute; transform-origin: 0 0; }
+  .shot .marks { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }
+
+  .pinned { position: absolute; z-index: 340; border-radius: 6px; box-shadow: 0 0 0 1px #fff4, 0 14px 30px #000a; cursor: move; overflow: hidden; background: #222; }
+  .pinned .pctl { position: absolute; top: 4px; right: 4px; display: none; gap: 6px; align-items: center; background: #000b; padding: 3px 6px; border-radius: 6px; font-size: 11px; color: #fff; z-index: 3; }
+  .pinned:hover .pctl { display: flex; }
+  .pinned .pctl button { background: none; border: 0; color: #fff; cursor: pointer; font: inherit; padding: 0 2px; }
+  .pinned .pctl input { width: 56px; }
+  .pinned.locked { pointer-events: none; box-shadow: 0 0 0 1px #fff2, 0 14px 30px #0008; }
+
+  .toast { position: absolute; left: 50%; bottom: 60px; transform: translateX(-50%); background: #000d; color: #fff; padding: 8px 14px; border-radius: 9px; font-size: 12.5px; z-index: 480; max-width: 640px; box-shadow: 0 6px 20px #0008; animation: fadeUp .25s; pointer-events: none; text-align: center; }
+  @keyframes fadeUp { from { opacity: 0; transform: translate(-50%, 8px); } }
+  .wintoast { position: absolute; right: 12px; bottom: 56px; width: 330px; background: #2b2b2bf5; border-radius: 8px; padding: 12px 14px; font-size: 12px; z-index: 330; box-shadow: 0 0 0 1px #ffffff14, 0 10px 30px #0008; animation: toastIn .35s; }
+  @keyframes toastIn { from { transform: translateX(350px); } }
+  .wintoast .app { color: #aaa; font-size: 11px; margin-bottom: 4px; }
+  .wintoast b { display: block; color: #fff; }
+  .wintoast .tag { display: inline-block; margin-top: 6px; background: var(--amber); color: #2a1a00; font-weight: 600; padding: 1px 7px; border-radius: 4px; font-size: 11px; }
+
+  /* recording */
+  #recFrame { position: absolute; border: 2px dashed var(--red); z-index: 360; display: none; pointer-events: none; }
+  #recFrame.dimout { box-shadow: 0 0 0 9999px #0005; }
+  #recFrame.live { border-style: solid; }
+  #recHud { position: absolute; z-index: 410; display: none; flex-direction: column; width: 300px; background: #26272bf5; border-radius: 14px; box-shadow: 0 0 0 1px #ffffff14, 0 14px 34px #000b; font-size: 13px; color: #eee; }
+  #recHud .top { display: flex; border-bottom: 1px solid #ffffff1a; height: 44px; }
+  #recHud .top > * { display: flex; align-items: center; justify-content: center; border-right: 1px solid #ffffff1a; }
+  #recHud .top > *:last-child { border-right: 0; }
+  #recHud .ico { width: 52px; background: none; border: 0; color: #77787d; cursor: pointer; }
+  #recHud .ico.on, #recHud .ico:hover { color: #fff; }
+  #recHud .size { flex: 1; gap: 6px; color: #888; }
+  #recHud .size input { width: 52px; background: #1a1b1e; border: 0; border-radius: 5px; color: #fff; text-align: center; font: 600 14px var(--font-ui); padding: 4px 0; }
+  #recHud .row { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; height: 44px; cursor: pointer; font-size: 15px; font-weight: 500; }
+  #recHud .row + .row { border-top: 1px solid #ffffff1a; }
+  #recHud .row:hover { background: #ffffff10; }
+  #recHud .row:last-of-type { border-radius: 0 0 14px 14px; }
+  #recHud .row .tag { background: #fff; color: #111; font-weight: 800; font-size: 11px; border-radius: 5px; padding: 2px 5px; }
+  #recOpts { position: absolute; top: 48px; left: 40px; width: 240px; background: #2e2f33fa; border-radius: 10px; padding: 6px; box-shadow: 0 12px 30px #000b; display: none; z-index: 2; }
+  #recOpts.on { display: block; }
+  #recOpts label { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+  #recOpts label:hover { background: #ffffff10; }
+  #countdown { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font: 700 120px var(--font-display); color: #fff; text-shadow: 0 4px 30px #000; z-index: 470; pointer-events: none; }
+  .ripple { position: absolute; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; border: 3px solid #facc15; animation: rip .5s forwards; pointer-events: none; z-index: 465; }
+  @keyframes rip { to { transform: scale(2); opacity: 0; } }
+  #keys { position: absolute; bottom: 70px; left: 50%; transform: translateX(-50%); background: #000c; color: #fff; padding: 6px 14px; border-radius: 10px; font-size: 18px; z-index: 465; display: none; }
+  #cam { position: absolute; width: 96px; height: 96px; border-radius: 50%; background: radial-gradient(circle at 50% 40%, #f5d0a9 0 22%, #6b4f3a 23% 30%, #3b82f6 31%); border: 3px solid #fff; z-index: 361; display: none; box-shadow: 0 6px 20px #0008; }
+  #scrollStrip { position: absolute; right: 16px; top: 16px; width: 160px; max-height: 560px; background: #000c; border-radius: 8px; padding: 6px; z-index: 375; display: none; overflow: hidden; }
+  #scrollStrip .lbl { color: #fff; font-size: 11px; margin-bottom: 4px; }
+
+  /* dictation pill */
+  #pill { position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); display: none; flex-direction: column; align-items: center; gap: 4px; z-index: 430; pointer-events: none; }
+  #pill.on { display: flex; animation: pillIn .14s ease-out; }
+  @keyframes pillIn { from { opacity: 0; transform: translate(-50%, 6px) scale(.96); } }
+  #pill .words { max-width: 168px; white-space: nowrap; overflow: hidden; font-size: 11.5px; color: #fff; background: #000c; padding: 2px 9px; border-radius: 9px; }
+  #pill .words:empty { display: none; }
+  #pill .body { display: flex; align-items: center; gap: 8px; background: #111c; backdrop-filter: blur(20px); border-radius: 18px; padding: 7px 12px; box-shadow: 0 0 0 1px #ffffff1f, 0 8px 22px #000a; }
+  #pill .bars { display: flex; align-items: center; gap: 2px; height: 18px; }
+  #pill .bars i { width: 3px; border-radius: 2px; background: #fff; height: 3px; transition: height .08s; }
+  #pill.thinking .bars i { background: #ffffff66; animation: think 1s infinite ease-in-out; }
+  @keyframes think { 50% { opacity: .3; } }
+  #pill .lock { display: none; width: 14px; height: 14px; border-radius: 3px; background: var(--red); }
+  #pill.locked .lock { display: block; }
+
+  /* history picker */
+  #hist { position: absolute; z-index: 440; display: none; gap: 8px; align-items: flex-start; }
+  #hist.on { display: flex; }
+  #histSheet { width: 400px; background: var(--navi-surface); backdrop-filter: blur(30px); border-radius: 10px; box-shadow: 0 0 0 1px #0008, 0 14px 34px #000b; padding: 0 0 6px; color: #eee; }
+  #histSheet .hhead { display: flex; gap: 8px; align-items: center; padding: 8px 10px; }
+  #histQ { flex: 1; background: #ffffff12; border: 0; border-radius: 6px; padding: 4px 8px; color: #fff; font: 13px var(--font-ui); }
+  .hrow { display: flex; align-items: center; gap: 8px; padding: 0 10px; margin: 0 5px; height: 26px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .hrow > .t { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  .hrow.sel { background: var(--accent); color: #fff; }
+  .hrow .k { color: #999; font-size: 11.5px; white-space: nowrap; } .hrow.sel .k { color: #fff; }
+  .hrow.img { height: 46px; } .hrow .mini { flex: none; height: 38px; width: 64px; border-radius: 4px; overflow: hidden; background: #333; }
+  .hrow .tag { font-size: 10px; background: #ffffff22; padding: 0 5px; border-radius: 3px; white-space: nowrap; }
+  .hrow .pinmark { color: var(--amber); font-size: 11px; }
+  #histPrev { width: 240px; background: var(--navi-surface); border-radius: 10px; box-shadow: 0 0 0 1px #0008, 0 14px 34px #000b; padding: 10px; font-size: 12px; color: #ddd; white-space: pre-wrap; word-break: break-word; }
+  #histPrev .meta { color: #888; font-size: 11px; margin-top: 8px; white-space: normal; }
+
+  /* windows that Navi opens (editor, trim) */
+  .navi-win { position: absolute; z-index: 380; display: none; background: #1c1d20; border-radius: 8px; box-shadow: 0 0 0 1px #ffffff1a, 0 30px 80px #000c; overflow: hidden; }
+  .navi-win.on { display: block; }
+  .navi-win .tbar { height: 32px; background: var(--win-chrome); display: flex; align-items: center; font-size: 12px; color: #ccc; padding-left: 12px; gap: 8px; }
+  .navi-win .tbar .ctl { margin-left: auto; display: flex; height: 100%; }
+  .navi-win .tbar .ctl i { width: 44px; display: flex; align-items: center; justify-content: center; font-style: normal; cursor: pointer; }
+  .navi-win .tbar .ctl i:last-child:hover { background: #c42b1c; }
+  .toolbar { display: flex; gap: 2px; padding: 6px 8px; border-bottom: 1px solid #2c2d31; align-items: center; background: #1c1d20; }
+  .toolbar button { background: none; border: 0; color: #ccc; width: 30px; height: 28px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; font: inherit; }
+  .toolbar button:hover { background: #2c2d31; }
+  .toolbar button.on { background: var(--accent); color: #fff; }
+  .toolbar .sep { width: 1px; height: 20px; background: #333; margin: 0 4px; flex: none; }
+  .toolbar .sw8 { width: 16px; height: 16px; border-radius: 50%; box-shadow: 0 0 0 1px #0006 inset; }
+  .toolbar button.swb.on { background: #3a3b40; }
+  .toolbar .txt { width: auto; padding: 0 10px; font-size: 12.5px; }
+  .toolbar .done { background: var(--accent); color: #fff; width: auto; padding: 0 14px; font-weight: 600; font-size: 13px; }
+  .toolbar .done:hover { background: #2563eb; }
+  .toolbar .grow { flex: 1; }
+  .toolbar .dragme { width: 40px; height: 28px; border-radius: 5px; overflow: hidden; box-shadow: 0 0 0 1px #ffffff33; cursor: grab; flex: none; }
+  .szdot { border-radius: 50%; background: currentColor; display: block; }
+  #edArea { padding: 18px; display: flex; justify-content: center; align-items: center; background: #141517; height: 420px; }
+  #edFrame { border-radius: 12px; transition: padding .25s, background .25s; }
+  #edFrame.bg { padding: 30px; background: linear-gradient(135deg, #a78bfa, #f472b6 50%, #fb923c); }
+  #edStage { position: relative; border-radius: 4px; box-shadow: 0 10px 30px #0008; cursor: crosshair; overflow: hidden; }
+  #edStage.sel { cursor: default; }
+  #edStage .hit { position: absolute; inset: 0; }
+  .edTip { color: var(--dim); font-size: 11.5px; padding: 6px 12px; border-top: 1px solid #2c2d31; display: flex; gap: 14px; flex-wrap: wrap; }
+  .tedit { position: absolute; min-width: 30px; color: #fff; font: 700 18px var(--font-ui); outline: 1px dashed #fff8; padding: 0 2px; text-shadow: 0 1px 3px #000; cursor: text; z-index: 5; white-space: pre; }
+  #editor.inplace { background: transparent; box-shadow: none; overflow: visible; }
+  #editor.inplace .tbar, #editor.inplace .edTip { display: none; }
+  #editor.inplace #edArea { background: transparent; padding: 0; height: auto; display: block; }
+  #editor.inplace #edStage { border-radius: 0; box-shadow: 0 0 0 1px #fff; }
+  #editor.inplace .toolbar { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 10px; border: 0; box-shadow: 0 0 0 1px #ffffff1a, 0 12px 30px #000b; white-space: nowrap; }
+  #inplaceDim { position: absolute; inset: 0; background: #0007; z-index: 379; display: none; }
+
+  #trim .inner { width: 720px; padding: 16px 18px; }
+  .film { position: relative; display: flex; height: 64px; border-radius: 8px; overflow: hidden; background: #000; }
+  .film > .fr { flex: 1; overflow: hidden; border-right: 1px solid #000; position: relative; }
+  .trimSel { position: absolute; top: 0; bottom: 0; border: 3px solid var(--amber); border-left-width: 10px; border-right-width: 10px; border-radius: 6px; box-shadow: 0 0 0 9999px #000a; pointer-events: none; }
+  .trimRow { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; color: var(--dim); font-variant-numeric: tabular-nums; gap: 10px; flex-wrap: wrap; }
+  .trimRange { display: flex; gap: 10px; align-items: center; margin-top: 10px; color: var(--dim); font-size: 12px; }
+  .trimRange input { flex: 1; }
+  .btn { background: #2c2d31; color: #eee; border: 0; border-radius: 7px; padding: 6px 14px; cursor: pointer; font: inherit; }
+  .btn.pri { background: var(--accent); color: #fff; font-weight: 600; }
+
+  /* side guide */
+  .side { flex: 1 1 290px; max-width: 360px; min-width: 0; font-size: 13px; }
+  .side h3 { margin: 0 0 8px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .05em; }
+  .side ol, .side ul { margin: 0; padding-left: 18px; } .side li { margin-bottom: 6px; }
+  .side .box { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+  .side .box p { margin: 0 0 8px; }
+  .holdbtn { width: 100%; margin-top: 6px; background: #26272b; color: #eee; border: 1px solid #36373c; border-bottom-width: 3px; border-radius: 8px; padding: 10px; font: 600 13px var(--font-ui); cursor: pointer; touch-action: none; }
+  .holdbtn.down { background: var(--accent); border-color: #2563eb; transform: translateY(1px); }
+  .quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .quick button { background: #26272b; color: #ddd; border: 1px solid #36373c; border-radius: 6px; padding: 4px 9px; font: 12px var(--font-ui); cursor: pointer; }
+  .quick button:hover { border-color: var(--accent); }
+
+  /* tables and plan */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; min-width: 860px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 500; background: var(--panel); }
+  td code, .plan code, .hint code { font: 12px var(--font-mono); color: var(--violet); }
+  tr.group td { color: var(--dim); font-weight: 600; padding-top: 16px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; background: #15161a; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .p-same { background: #22c55e22; color: #4ade80; } .p-key { background: #3b82f622; color: #60a5fa; }
+  .p-close { background: #f59e0b22; color: #fbbf24; } .p-gap { background: #ef444422; color: #f87171; } .p-simple { background: #14b8a622; color: #2dd4bf; }
+  .legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; color: var(--dim); font-size: 12.5px; }
+  .counts { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 16px; }
+  .counts div { font-size: 12px; color: var(--dim); } .counts b { display: block; font: 600 22px var(--font-display); color: var(--text); font-variant-numeric: tabular-nums; }
+  .plan { max-width: 980px; }
+  .plan h2 { font: 600 18px var(--font-display); margin: 28px 0 8px; text-wrap: balance; } .plan h2:first-child { margin-top: 0; }
+  .plan p { max-width: 72ch; }
+  .stepcard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 12px 0; }
+  .stepcard h3 { margin: 0 0 6px; font-size: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .stepcard h3 .wk { margin-left: auto; color: var(--dim); font-weight: 400; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .plan ul { margin: 6px 0; padding-left: 20px; }
+  .plan .doneWhen { color: var(--dim); font-size: 13px; margin: 8px 0 0; }
+  .plan .doneWhen b { color: var(--text); }
+  .ph { background: #6b728033; color: #cbd5e1; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+  .grid2 .stepcard { margin: 0; }
+  pre.tree { background: #0d0e10; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font: 12px/1.6 var(--font-mono); color: #cbd5e1; overflow-x: auto; margin: 8px 0; }
+  .decision { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin: 12px 0; display: grid; grid-template-columns: 56px 1fr; gap: 4px 14px; }
+  .decision .id { font: 600 20px var(--font-display); color: var(--accent); grid-row: span 3; }
+  .decision h3 { margin: 0; font-size: 15px; }
+  .decision .rec b { color: var(--green); }
+  .decision .alt { color: var(--dim); font-size: 13px; }
+  @media (max-width: 640px) { .decision { grid-template-columns: 1fr; } .decision .id { grid-row: auto; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+
+<header>
+  <h1>Navi for Windows <span>· for approval</span></h1>
+  <nav id="tabs">
+    <button data-tab="prototype" class="on">Prototype</button>
+    <button data-tab="features">Feature map</button>
+    <button data-tab="keys">Keys</button>
+    <button data-tab="plan">Plan</button>
+    <button data-tab="decisions">Decisions</button>
+  </nav>
+</header>
+
+<!-- ======================= PROTOTYPE ======================= -->
+<section class="tab" id="tab-prototype">
+  <p class="hint">A clickable Windows 11 screen running Navi. Everything Navi draws (menu, settings, overlay, magnifier, cards, markup, pins, pill, record bar, history) uses the same layout, sizes, colors, and behavior as the Mac app. Only the Windows parts change: the taskbar tray instead of the menu bar, Windows title bars, and Windows keys. Click the <b>Navi icon in the tray</b> (bottom right) to start.</p>
+  <div class="proto-wrap">
+    <div class="stage-col">
+      <div class="scaler" id="scaler">
+        <div id="screen">
+          <div id="desktop">
+            <div class="icons" id="dicons"></div>
+            <div class="win notepad" data-name="Notepad" style="left:110px; top:40px; width:380px; height:270px;">
+              <div class="tbar"><span class="app" style="background:#4cc2ff"></span>launch-notes.txt - Notepad<span class="ctl"><i>&#8211;</i><i>&#9633;</i><i>&#10005;</i></span></div>
+              <div class="menu-row"><span>File</span><span>Edit</span><span>View</span></div>
+              <div class="body" id="np">Navi for Windows launch list
+- Capture area, window, fullscreen
+- Corner card with copy and drag
+- Markup: arrow, box, blur, counter
+- Record MP4 and GIF
+- Hold Right Alt to talk
+
+</div>
+            </div>
+            <div class="win term" data-name="Terminal" style="left:520px; top:70px; width:420px; height:290px;">
+              <div class="tbar"><span class="app" style="background:#2b2b2b; box-shadow:0 0 0 1px #888 inset"></span>Windows PowerShell<span class="ctl"><i>&#8211;</i><i>&#9633;</i><i>&#10005;</i></span></div>
+              <div class="body">
+                <p>PS C:\dev\navi\windows&gt; dotnet test</p>
+                <p class="ok">  Passed Navi.Core.Tests        42 tests</p>
+                <p class="ok">  Passed Navi.Capture.Tests     118 tests</p>
+                <p class="ok">  Passed Navi.Dictation.Tests   77 tests</p>
+                <p class="ok">  Passed Navi.Recording.Tests   31 tests</p>
+                <p>Test run summary: Passed! 268 total</p>
+                <p>PS C:\dev\navi\windows&gt; dotnet run --project App</p>
+                <p>Navi Dev is running in the tray.</p>
+                <p>PS C:\dev\navi\windows&gt; _</p>
+              </div>
+            </div>
+            <div class="win chat" data-name="Chat" style="left:250px; top:340px; width:430px; height:250px;">
+              <div class="tbar"><span class="app" style="background:#a855f7"></span>Chat - #navi<span class="ctl"><i>&#8211;</i><i>&#9633;</i><i>&#10005;</i></span></div>
+              <div class="body">
+                <div class="msgs" id="msgs"><div class="msg"><b>Sam</b> does the Windows build feel like the Mac one?</div></div>
+                <div class="dropzone" id="dropzone">Drag a capture card here to send it</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="taskbar">
+            <div class="tb-center">
+              <span class="tb-btn" title="Start"><svg width="18" height="18" viewBox="0 0 18 18"><rect x="0" y="0" width="8.4" height="8.4" fill="#4cc2ff"/><rect x="9.6" y="0" width="8.4" height="8.4" fill="#4cc2ff"/><rect x="0" y="9.6" width="8.4" height="8.4" fill="#4cc2ff"/><rect x="9.6" y="9.6" width="8.4" height="8.4" fill="#4cc2ff"/></svg></span>
+              <span class="tb-search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" stroke-width="2.4"><circle cx="10" cy="10" r="7"/><path d="M15 15l6 6"/></svg>Search</span>
+              <span class="tb-btn run"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M3 6h7l2 2h9v11H3z" fill="#f5c518"/></svg></span>
+              <span class="tb-btn run"><svg width="20" height="20" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2" fill="#4cc2ff"/><path d="M8 8h8M8 12h8M8 16h5" stroke="#06283d" stroke-width="1.6"/></svg></span>
+              <span class="tb-btn run"><svg width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="#2b2b2b" stroke="#999"/><path d="M7 10l3 2-3 2M12 15h5" stroke="#ddd" stroke-width="1.6" fill="none"/></svg></span>
+              <span class="tb-btn run"><svg width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#a855f7"/><path d="M8 9h8M8 13h5" stroke="#fff" stroke-width="1.8"/></svg></span>
+            </div>
+            <div class="tray">
+              <span id="recTray" title="Stop recording"><svg width="10" height="10" viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="#fff"/></svg><span id="recTime">0:00</span></span>
+              <span title="Show hidden icons"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2.4"><path d="M6 15l6-6 6 6"/></svg></span>
+              <span id="naviTray" title="Navi"><svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#fff"/><circle cx="19" cy="19" r="2.4" fill="#fff"/></svg></span>
+              <span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1" fill="#ddd"/></svg><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="2"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg></span>
+              <span class="clock"><span>4:10 PM</span><span>11/16/2026</span></span>
+            </div>
+          </div>
+
+          <div class="navi-pop" id="menu"></div>
+          <div class="navi-pop" id="settings"></div>
+
+          <div id="cards"></div>
+          <div id="recFrame"></div>
+          <div id="cam"></div>
+          <div id="keys"></div>
+          <div id="scrollStrip"><div class="lbl">Stitching. Keep scrolling.</div><div id="stripBody"></div></div>
+
+          <div id="recHud">
+            <div class="top">
+              <button class="ico" data-opt="mic" title="Microphone"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="8.5" y="2.5" width="7" height="11" rx="3.5"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+              <button class="ico on" id="recSettings" title="Recording options"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 3v18M12 3v18M19 3v18"/><circle cx="5" cy="9" r="2.3" fill="#26272b"/><circle cx="12" cy="15" r="2.3" fill="#26272b"/><circle cx="19" cy="7" r="2.3" fill="#26272b"/></svg></button>
+              <div class="size"><input id="recW" aria-label="Width"> &times; <input id="recH" aria-label="Height"></div>
+              <button class="ico on" id="recFull" title="Record fullscreen"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7"/></svg></button>
+            </div>
+            <div class="row" data-rec="GIF">Record GIF <span class="tag">GIF</span></div>
+            <div class="row" data-rec="MP4">Record Video <svg width="26" height="20" viewBox="0 0 26 20" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><rect x="1.5" y="3" width="16" height="14" rx="3"/><path d="M17.5 8.5l6-3.5v10l-6-3.5z"/></svg></div>
+            <div id="recOpts">
+              <label>Computer audio <input type="checkbox" id="optAudio" checked></label>
+              <label>Camera <input type="checkbox" id="optCam"></label>
+              <label>Show clicks <input type="checkbox" id="optClicks" checked></label>
+              <label>Show keystrokes <input type="checkbox" id="optKeys"></label>
+              <label>Hide desktop icons <input type="checkbox" id="optIcons"></label>
+              <label>Leave out notifications <input type="checkbox" id="optNotif" checked></label>
+            </div>
+          </div>
+
+          <div id="pill"><div class="words" id="pillWords"></div><div class="body"><div class="bars" id="bars"></div><div class="lock"></div></div></div>
+
+          <div id="hist">
+            <div id="histSheet">
+              <div class="hhead"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#999" stroke-width="2.4"><circle cx="10" cy="10" r="7"/><path d="M15 15l6 6"/></svg><input id="histQ" placeholder="Type to search" autocomplete="off"></div>
+              <div id="histRows"></div>
+            </div>
+            <div id="histPrev"></div>
+          </div>
+
+          <div id="inplaceDim"></div>
+          <div class="navi-win" id="editor">
+            <div class="tbar"><span style="width:14px;height:14px;display:inline-flex"><svg width="14" height="14" viewBox="0 0 24 24"><path d="M12 2c.6 4.6 3.4 7.4 8 8-4.6.6-7.4 3.4-8 8-.6-4.6-3.4-7.4-8-8 4.6-.6 7.4-3.4 8-8z" fill="#fff"/></svg></span><span id="edTitle">Navi Markup</span><span class="ctl"><i>&#8211;</i><i>&#9633;</i><i id="edX">&#10005;</i></span></div>
+            <div class="toolbar" id="tools"></div>
+            <div id="edArea"><div id="edFrame"><div id="edStage"></div></div></div>
+            <div class="edTip"><span>Keys: V A R F O L P H T N B X S C</span><span><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo</span><span><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> redo</span><span><kbd>Delete</kbd> removes the selected mark</span></div>
+          </div>
+
+          <div class="navi-win" id="trim">
+            <div class="tbar"><span>Trim Recording</span><span class="ctl"><i>&#8211;</i><i>&#9633;</i><i id="trimX">&#10005;</i></span></div>
+            <div class="inner">
+              <div class="film" id="film"></div>
+              <div class="trimRange">Start <input type="range" id="trimA" min="0" max="100" value="0"> End <input type="range" id="trimB" min="0" max="100" value="100"></div>
+              <div class="trimRow"><span id="trimLbl">0:00.0 to 0:07.0</span><span><button class="btn" id="trimCancel">Cancel</button> <button class="btn pri" id="trimSave">Save</button></span></div>
+            </div>
+          </div>
+
+          <div id="aio"></div>
+          <div id="overlay">
+            <div class="dim"></div>
+            <div class="xh"></div><div class="yh"></div>
+            <div id="sel"></div><div id="selSize"></div>
+            <div id="winHl"></div>
+            <div id="mag"><div class="lens"><div class="zoom"></div><div class="grid"></div><div class="px"></div></div><div class="strip"><i id="magSw"></i><span id="magHex">#000000</span><span id="magXY" style="margin-left:auto;color:#aaa"></span></div></div>
+            <div class="modeTag" id="modeTag"></div>
+          </div>
+          <div id="countdown"></div>
+          <div id="flash"></div>
+          <div id="toasts"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="box">
+        <h3>Try these</h3>
+        <ol>
+          <li><b>Capture Area</b> from the tray menu, or <kbd>Win</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> in the real app. Drag a box. Watch the magnifier, the hex color, and the size.</li>
+          <li>Press <kbd>Space</kbd> during a capture for window mode. The window comes out alone.</li>
+          <li>Hover the corner card: <b>Copy</b>, <b>Save</b>, and the corners Pin, Close, Markup, Show in Explorer. While hovering, <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>S</kbd> / <kbd>W</kbd> / <kbd>E</kbd> / <kbd>P</kbd> work too.</li>
+          <li><b>Drag</b> the card into the Chat window.</li>
+          <li>Open <b>Markup</b>. Every tool and its key, colors, sizes, undo, Background, the small picture to drag out, and Done.</li>
+          <li><b>All-in-One</b> for the bar, then <b>Record Screen…</b>, then stop from the red item in the tray.</li>
+          <li><b>Open History</b> (<kbd>Win</kbd>+<kbd>V</kbd> in the real app). Type to filter, arrows, <kbd>Enter</kbd> pastes.</li>
+        </ol>
+        <div class="quick" id="quick"></div>
+      </div>
+      <div class="box">
+        <h3>Talk to type</h3>
+        <p>Click into this page, then hold <kbd>Right Alt</kbd> (Right Option on a Mac) or hold the button. Let go to type into Notepad. Tap twice to lock, press again to stop. <kbd>Esc</kbd> cancels.</p>
+        <button class="holdbtn" id="holdBtn">Hold to talk (Right Alt)</button>
+      </div>
+      <div class="box">
+        <h3>Only on Windows</h3>
+        <ul>
+          <li>Navi lives in the tray. Windows 11 hides new tray icons, so the first run shows how to keep it visible.</li>
+          <li>No Screen Recording or Accessibility permission. Only the microphone asks.</li>
+          <li>Hide desktop icons really hides them for a moment while a shot is taken (Windows can't leave them out of the capture).</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FEATURE MAP ======================= -->
+<section class="tab" id="tab-features" hidden>
+  <p class="hint">Every feature in the Mac app today, how the Mac build does it, and how the Windows build does the same thing. The parity column says how close it gets.</p>
+  <div class="counts" id="counts"></div>
+  <div class="legend">
+    <span class="pill p-same">Same</span> works and looks the same
+    <span class="pill p-key">Other key</span> same feature, Windows key
+    <span class="pill p-simple">Simpler</span> Windows needs less
+    <span class="pill p-close">Close</span> small visible difference
+    <span class="pill p-gap">Gap</span> needs a decision
+  </div>
+  <div class="tablewrap"><table>
+    <thead><tr><th style="width:22%">Feature</th><th style="width:26%">Mac build</th><th style="width:38%">Windows build</th><th>Parity</th></tr></thead>
+    <tbody id="mapBody"></tbody>
+  </table></div>
+</section>
+
+<!-- ======================= KEYS ======================= -->
+<section class="tab" id="tab-keys" hidden>
+  <p class="hint">Two key sets, picked in Settings under <b>Shortcut Style</b>. <b>Windows keys</b> (recommended default) take over the keys Windows already uses for screenshots and clipboard history, the same way the Mac build borrows <kbd>⇧⌘3</kbd> and <kbd>⇧⌘4</kbd>. <b>Mac-style</b> is the direct swap you asked for: <kbd>⌘</kbd> becomes <kbd>Ctrl</kbd>, <kbd>⌥</kbd> becomes <kbd>Alt</kbd>. Both sets can be changed one by one.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Action</th><th>Mac</th><th>Windows keys (default)</th><th>Mac-style</th><th>Notes</th></tr></thead>
+    <tbody id="keyBody"></tbody>
+  </table></div>
+</section>
+
+<!-- ======================= PLAN ======================= -->
+<section class="tab" id="tab-plan" hidden>
+  <div class="plan">
+    <h2>The idea</h2>
+    <p>One product, two native apps. The Windows build is a separate app in this repo under <code>windows/</code>, written in C# on .NET 10 with WPF. It copies the Mac app feature for feature and pixel for pixel: the same menu, settings, cards, editor, pill, record bar, and history, with the same sizes, colors, radii, timings, and words. Both apps read and write the same files (<code>history.json</code>, <code>.navi</code>), so they behave the same and their tests can share fixtures.</p>
+
+    <h2>Stack</h2>
+    <div class="grid2">
+      <div class="stepcard"><h3>App</h3><ul><li>C# 14, .NET 10 LTS, WPF</li><li>Win32 through CsWin32 (generated, no hand-written interop)</li><li>Acrylic backdrop for Navi's panels (<code>DWMWA_SYSTEMBACKDROP_TYPE</code>)</li><li>Per-Monitor V2 DPI awareness</li><li>Windows 11 22H2 and later, x64 and ARM64</li></ul></div>
+      <div class="stepcard"><h3>Engines</h3><ul><li>Capture: Windows.Graphics.Capture through Vortice.Windows</li><li>Video: Media Foundation H.264/AAC, hardware encoder</li><li>Audio: NAudio (WASAPI mic and loopback)</li><li>Speech: Parakeet TDT v3 through sherpa-onnx</li><li>OCR: Windows.Media.Ocr. QR: ZXing.Net</li><li>Stitch: OpenCvSharp. GIF: gifski DLL</li></ul></div>
+      <div class="stepcard"><h3>Ship</h3><ul><li>Velopack: installer, delta updates, the same daily check as Sparkle</li><li>Azure Trusted Signing (Authenticode) so SmartScreen and antivirus trust the keyboard hook</li><li>GitHub Releases next to the Mac zip</li></ul></div>
+    </div>
+
+    <h2>Layout</h2>
+<pre class="tree">windows/
+  Navi.sln
+  App/                     tray icon, Navi menu, settings panel, hot keys, wiring
+  Navi.Core/               Inbox, CaptureItem, history.json (same format as NaviCore)   net10.0
+  Navi.Clipboard/          watcher, picker, paste                                       net10.0-windows
+  Navi.Capture/            overlay, magnifier, cards, Annotate/, Extras/, Scroll/, Background/
+  Navi.Capture.Logic/      geometry, stitch math, marks model, .navi format             net10.0
+  Navi.Dictation/          key hook, mic, pill, paste
+  Navi.Dictation.Logic/    gestures, ReleaseTail, LiveText, cleanup rules                net10.0
+  Navi.Recording/          WGC + Media Foundation, camera, overlays, GIF, trim
+  Navi.Recording.Logic/    recording math, audio mixdown                                net10.0
+  tests/                   xUnit per project, FlaUI flows, snapshot tests
+shared-fixtures/           bench audio, stitch cases, history files (used by both apps)</pre>
+    <p>Features talk only through <code>Navi.Core</code>, the same rule as <code>Packages/</code>. A feature project never references another feature project.</p>
+
+    <h2>How it gets tested</h2>
+    <div class="grid2">
+      <div class="stepcard"><h3>On this Mac</h3>All <code>*.Logic</code> and <code>Navi.Core</code> projects target plain <code>net10.0</code>, so <code>dotnet test</code> runs here in seconds. This is where most of the code lives.</div>
+      <div class="stepcard"><h3>In a Windows VM</h3>Parallels with Windows 11 ARM. The agent connects over SSH and runs the Windows tests, FlaUI flows that drive the real app, and snapshot tests that draw each window to PNG (like <code>EditorSnapshot</code>) to compare with the Mac build.</div>
+      <div class="stepcard"><h3>In CI</h3>GitHub Actions <code>windows-latest</code> runs everything on each push, plus a parity check: the same fixture history and <code>.navi</code> files open the same in both apps.</div>
+    </div>
+
+    <h2>Steps</h2>
+    <p>Same order as the Mac build. Weeks are for one developer working full time; an agent with the VM loop may go faster, but these are the numbers to plan against.</p>
+    <div id="steps"></div>
+
+    <h2>Risks</h2>
+    <ul>
+      <li><b>Antivirus and the keyboard hook.</b> Low-level hooks look like keyloggers to some antivirus apps. Signing from day one and a clear first-run screen lower the risk.</li>
+      <li><b>Mixed DPI displays.</b> The overlay and magnifier must line up to the pixel on a 150% laptop next to a 100% monitor. Test from step W2, not at the end.</li>
+      <li><b>Right Alt on European layouts</b> is AltGr. Navi checks the keyboard layout and picks Right Ctrl there.</li>
+      <li><b>Taking over Win+Shift+S and Win+V</b> means Navi has to pass them back cleanly when it quits or crashes. A watchdog restores them, like <code>SystemScreenshotShortcuts</code> does on SIGTERM.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ======================= DECISIONS ======================= -->
+<section class="tab" id="tab-decisions" hidden>
+  <div class="plan">
+    <p class="hint">These are the calls that change what gets built. Each has a recommendation. Reply with the IDs you approve, or say what to change (for example "approve all, D3 use Mac-style").</p>
+    <div id="decisions"></div>
+  </div>
+</section>
+
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const W = 1100, H = 690, DESK_H = 646;
+let recording = null;
+
+/* ---------------- tabs (hash routed) ---------------- */
+const TABS = ['prototype', 'features', 'keys', 'plan', 'decisions'];
+function showTab(name) {
+  const t = TABS.includes(name) ? name : 'prototype';
+  $$('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  TABS.forEach(n => { $('#tab-' + n).hidden = n !== t; });
+  if (t === 'prototype') fit();
+}
+$$('#tabs button').forEach(b => b.addEventListener('click', () => {
+  if (location.hash !== '#' + b.dataset.tab) location.hash = b.dataset.tab; else showTab(b.dataset.tab);
+}));
+window.addEventListener('hashchange', () => showTab(location.hash.slice(1)));
+
+/* ---------------- icons ---------------- */
+const ic = (d, sz = 16, extra = '') => `<svg width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
+const I = {
+  select: '<path d="M6 3l12 8-5.5 1.5L10 18z" fill="currentColor" stroke="none"/>',
+  arrow: '<path d="M5 19L19 5M10 5h9v9"/>',
+  rect: '<rect x="4" y="6" width="16" height="12" rx="1"/>',
+  fill: '<rect x="4" y="6" width="16" height="12" rx="1" fill="currentColor"/>',
+  ellipse: '<ellipse cx="12" cy="12" rx="8" ry="6"/>',
+  line: '<path d="M5 19L19 5"/>',
+  pencil: '<path d="M4 20l4-1 11-11-3-3L5 16z"/>',
+  hi: '<path d="M9 14l7-10 4 3-7 10zM9 14l-3 5h6l1-2"/>',
+  text: '<path d="M5 6V4h14v2M12 4v16M9 20h6"/>',
+  counter: '<circle cx="12" cy="12" r="8"/><path d="M11 9l2-1v8"/>',
+  blur: '<path d="M12 3s6 7 6 11a6 6 0 0 1-12 0c0-4 6-11 6-11z"/>',
+  pix: '<path d="M4 4h5v5H4zM15 4h5v5h-5zM9.5 9.5h5v5h-5zM4 15h5v5H4zM15 15h5v5h-5z" fill="currentColor" stroke="none"/>',
+  spot: '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/>',
+  crop: '<path d="M6 2v16h16M2 6h16v16"/>',
+  undo: '<path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="M15 14l5-5-5-5M20 9H9a5 5 0 0 0 0 10h3"/>',
+  rotate: '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',
+  flip: '<path d="M12 3v18M8 7l-5 5 5 5V7zM16 7l5 5-5 5V7z"/>',
+  pin: '<path d="M12 17v5M8 3h8l-1 6 3 3H6l3-3z"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  mark: '<path d="M4 20l4-1 11-11-3-3L5 16z"/>',
+  folder: '<path d="M3 6h7l2 2h9v11H3z"/>',
+  scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.1 15.9M14.5 14.5L20 20M8.1 8.1L12 12"/>',
+  area: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/>',
+  window: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/>',
+  full: '<rect x="3" y="4" width="18" height="13" rx="1"/><path d="M8 21h8"/>',
+  scroll: '<rect x="6" y="3" width="12" height="18" rx="2"/><path d="M12 7v6M9.5 10.5L12 13l2.5-2.5"/>',
+  ocr: '<path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4M8 9h8M8 12h8M8 15h5"/>',
+  rec: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/>',
+  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/>',
+};
+
+/* ---------------- desktop icons (drawn, not emoji) ---------------- */
+const folderSvg = c => `<svg width="38" height="34" viewBox="0 0 38 34"><path d="M2 6h13l3 3h18v22H2z" fill="${c}"/><path d="M2 11h34v20H2z" fill="${c}" opacity=".85"/></svg>`;
+const fileSvg = (c, l) => `<svg width="30" height="36" viewBox="0 0 30 36"><path d="M2 2h18l8 8v24H2z" fill="#f3f3f3"/><path d="M20 2v8h8" fill="#cfcfcf"/><rect x="5" y="22" width="20" height="9" rx="2" fill="${c}"/><text x="15" y="29" font-size="7" font-family="Segoe UI, sans-serif" fill="#fff" text-anchor="middle" font-weight="700">${l}</text></svg>`;
+$('#dicons').innerHTML = [
+  [folderSvg('#f5c518'), 'Old stuff'], [fileSvg('#2563eb', 'PNG'), 'IMG_2231.png'], [fileSvg('#dc2626', 'PDF'), 'taxes-final.pdf'],
+  [folderSvg('#f5c518'), 'misc'], [fileSvg('#16a34a', 'ZIP'), 'Navi.zip'], [`<svg width="36" height="36" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 14H6.2z" fill="#9ca3af"/><path d="M4 7h16M9 7V4h6v3" stroke="#e5e7eb" stroke-width="1.5" fill="none"/></svg>`, 'Recycle Bin'],
+].map(([svg, n]) => `<div class="dicon">${svg}${n}</div>`).join('');
+
+/* ---------------- scale to fit ---------------- */
+const screen = $('#screen'), scaler = $('#scaler');
+let scale = 1;
+function fit() {
+  const w = scaler.parentElement.clientWidth || W;
+  scale = Math.min(1, w / W);
+  screen.style.transform = `scale(${scale})`;
+  scaler.style.height = (H * scale) + 'px';
+}
+window.addEventListener('resize', fit);
+const pt = e => { const r = screen.getBoundingClientRect(); const k = r.width / W; return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; };
+let mouse = { x: 600, y: 300 };
+screen.addEventListener('mousemove', e => { mouse = pt(e); });
+
+/* ---------------- settings state ---------------- */
+let S = Object.freeze({
+  copyToClipboard: true, editAfterCapture: false, hideIcons: false, borrowKeys: true, style: 'windows',
+  talk: true, talkKey: 'AltRight', tapToggle: false, liveWords: true, keepMic: false, betterCleanup: false,
+  startWithWindows: true,
+});
+const setS = patch => { S = Object.freeze({ ...S, ...patch }); renderMenu(); renderSettings(); $('#holdBtn').textContent = `Hold to talk (${talkKeyName()})`; };
+const talkKeyName = () => S.talkKey === 'AltRight' ? 'Right Alt' : 'Right Ctrl';
+
+const KEYS = {
+  windows: { area: 'Win+Shift+S', window: 'Win+Shift+S, Space', full: 'PrtSc', aio: 'Ctrl+PrtSc', scroll: 'Ctrl+Alt+Shift+4', ocr: 'Ctrl+Alt+Shift+T', rec: 'Ctrl+Alt+Shift+5', hist: 'Win+V', menu: 'Ctrl+Alt+Shift+N' },
+  mac: { area: 'Ctrl+Shift+4', window: 'Ctrl+Shift+4, Space', full: 'Ctrl+Shift+3', aio: 'Ctrl+Shift+5', scroll: 'Ctrl+Alt+Shift+4', ocr: 'Ctrl+Alt+Shift+T', rec: 'Ctrl+Alt+Shift+5', hist: 'Win+V', menu: 'Ctrl+Alt+Shift+N' },
+};
+const key = a => KEYS[S.style][a] || '';
+
+/* ---------------- toasts ---------------- */
+function toast(msg, ms = 2200) {
+  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  $$('#toasts .toast').forEach(o => o.remove());
+  $('#toasts').appendChild(t); setTimeout(() => t.remove(), ms);
+}
+function winToast(app, title, body, tag) {
+  const t = document.createElement('div'); t.className = 'wintoast';
+  t.innerHTML = `<div class="app">${app}</div><b>${title}</b>${body}${tag ? `<div><span class="tag">${tag}</span></div>` : ''}`;
+  screen.appendChild(t); setTimeout(() => t.remove(), 4200);
+}
+
+/* ---------------- tray menu ---------------- */
+const menu = $('#menu'), settings = $('#settings');
+function renderMenu() {
+  const it = (act, label, k = '') => `<div class="item" data-act="${act}"><span>${label}</span><span class="k">${k}</span></div>`;
+  menu.innerHTML = [
+    it('aio', 'All-in-One', key('aio')), it('area', 'Capture Area', key('area')), it('window', 'Capture Window'), it('full', 'Capture Fullscreen', key('full')),
+    it('scroll', 'Scrolling Capture', key('scroll')), it('ocr', 'Capture Text', key('ocr')), it('timer', 'Self-Timer', '3 s'),
+    '<hr>', recording ? it('stop', 'Stop Recording', key('rec')) : it('rec', 'Record Screen…', key('rec')),
+    '<hr>', it('closeCards', 'Close All Cards'), ...($$('.pinned').length ? [it('unlockPins', 'Unlock Pinned Shots'), it('closePins', 'Close Pinned Shots')] : []),
+    '<hr>', it('hist', 'Open History', key('hist')),
+    '<hr>', it('settings', 'Settings…', 'Ctrl+,'), it('updates', 'Check for Updates…'), it('quit', 'Quit Navi'),
+  ].join('');
+}
+function renderSettings() {
+  const tog = (k, label) => `<div class="item" data-set="${k}"><span>${label}</span><span class="sw ${S[k] ? 'on' : ''}"></span></div>`;
+  const seg = (k, label, opts) => `<div class="item" data-seg="${k}"><span>${label}</span><span class="seg">${opts.map(([v, l]) => `<b data-v="${v}" class="${S[k] === v ? 'on' : ''}">${l}</b>`).join('')}</span></div>`;
+  settings.innerHTML = [
+    '<div class="sect">Capture</div>',
+    tog('copyToClipboard', 'Copy Screenshots to Clipboard'), tog('editAfterCapture', 'Edit Screenshots Before Copying'), tog('hideIcons', 'Hide Desktop Icons in Shots'),
+    tog('borrowKeys', 'Use PrtSc and Win+Shift+S'),
+    seg('style', 'Shortcut Style', [['windows', 'Windows'], ['mac', 'Mac-style']]),
+    '<hr><div class="sect">Talk to Type</div>',
+    tog('talk', 'Talk to Type'), seg('talkKey', 'Talk Key', [['AltRight', 'Right Alt'], ['ControlRight', 'Right Ctrl']]),
+    tog('tapToggle', 'Tap Key to Start and Stop'), tog('liveWords', 'Show Words While Talking'), tog('keepMic', 'Keep Microphone Ready'),
+    tog('betterCleanup', 'Better Cleanup (1 GB download)'),
+    '<hr><div class="sect">History</div>',
+    `<div class="item" data-act="changeHist"><span>History Shortcut</span><span class="k">${key('hist')} <span class="pbtn">Change…</span></span></div>`,
+    `<div class="item" data-act="clearHist"><span>Clear History</span><span class="k"><span class="pbtn">Clear</span></span></div>`,
+    '<div class="note">Pinned items stay.</div>',
+    '<hr><div class="sect">General</div>', tog('startWithWindows', 'Start with Windows'),
+    '<hr><div class="sect">Permissions</div>',
+    '<div class="item"><span>Microphone</span><span class="k" style="color:#4ade80">Allowed</span></div>',
+    '<div class="note">Screen capture, paste, and the keyboard need no permission on Windows.</div>',
+  ].join('');
+}
+renderMenu(); renderSettings();
+function closePops() { menu.classList.remove('on'); settings.classList.remove('on'); $('#naviTray').classList.remove('open'); }
+$('#naviTray').addEventListener('click', e => { e.stopPropagation(); const open = menu.classList.contains('on') || settings.classList.contains('on'); closePops(); if (!open) { renderMenu(); menu.classList.add('on'); $('#naviTray').classList.add('open'); } });
+screen.addEventListener('mousedown', e => { if (!e.target.closest('.navi-pop') && !e.target.closest('#naviTray')) closePops(); });
+menu.addEventListener('click', e => { const it = e.target.closest('[data-act]'); if (!it) return; const a = it.dataset.act; closePops(); if (a === 'settings') { settings.classList.add('on'); $('#naviTray').classList.add('open'); return; } run(a); });
+settings.addEventListener('click', e => {
+  const t = e.target.closest('[data-set]'); if (t) { setS({ [t.dataset.set]: !S[t.dataset.set] }); return; }
+  const g = e.target.closest('[data-seg]');
+  if (g) { const b = e.target.closest('b[data-v]'); const opts = $$('b[data-v]', g).map(x => x.dataset.v); const v = b ? b.dataset.v : opts[(opts.indexOf(S[g.dataset.seg]) + 1) % opts.length]; setS({ [g.dataset.seg]: v }); return; }
+  const a = e.target.closest('[data-act]');
+  if (a && a.dataset.act === 'clearHist') { history = history.filter(h => h.pinned); toast('Cleared. Pinned items stay.'); }
+  if (a && a.dataset.act === 'changeHist') toast('Press the new shortcut. Win+V and Ctrl+Shift+V are both allowed.');
+});
+
+function run(a) {
+  ({
+    area: () => startCapture('area'), window: () => startCapture('window'), full: () => fullscreen(), aio: () => openAio(),
+    timer: () => countdown(3, () => fullscreen()), scroll: () => scrolling(), ocr: () => startCapture('ocr'),
+    rec: () => startCapture('rec'), stop: () => stopRec(), hist: () => openHist(),
+    closeCards: () => { $$('#cards .card').forEach(c => c.remove()); },
+    unlockPins: () => { $$('.pinned.locked').forEach(p => p.classList.remove('locked')); toast('Pinned shots unlocked'); },
+    closePins: () => $$('.pinned').forEach(p => p.remove()),
+    updates: () => toast('Navi is up to date (0.4.0). Velopack checks daily.'),
+    quit: () => toast('Quit gives PrtSc, Win+Shift+S, and Win+V back to Windows.', 3000),
+  }[a] || (() => {}))();
+}
+
+/* ---------------- shots: render a region of the desktop ---------------- */
+const desktop = $('#desktop');
+let shotSeq = 1;
+function cloneDesk(hideIcons) {
+  const c = desktop.cloneNode(true);
+  $$('[id]', c).forEach(n => n.removeAttribute('id'));
+  c.removeAttribute('id');
+  $$('.caret', c).forEach(n => n.remove());
+  if (hideIcons) { const ic2 = $('.icons', c); if (ic2) ic2.remove(); }
+  return c;
+}
+function cloneWin(name) {
+  const w = $$('.win', desktop).find(x => x.dataset.name === name);
+  const c = w.cloneNode(true); $$('[id]', c).forEach(n => n.removeAttribute('id')); $$('.caret', c).forEach(n => n.remove());
+  c.style.left = '0px'; c.style.top = '0px'; c.classList.remove('hl'); c.style.boxShadow = 'none';
+  return c;
+}
+function makeShot(rect, opts = {}) {
+  const base = opts.win ? cloneWin(opts.win) : cloneDesk(S.hideIcons);
+  return Object.freeze({ id: shotSeq++, rect: Object.freeze({ ...rect }), html: base.outerHTML, win: opts.win || null, marks: Object.freeze([]), bg: false, crop: null, kind: opts.kind || 'image', dur: opts.dur || 0, fmt: 'MP4' });
+}
+function shotView(shot, w, h, { fitMode = 'cover' } = {}) {
+  const r = shot.crop || { x: 0, y: 0, w: shot.rect.w, h: shot.rect.h };
+  const k = fitMode === 'cover' ? Math.max(w / r.w, h / r.h) : Math.min(w / r.w, h / r.h);
+  const box = document.createElement('div'); box.className = 'shot';
+  box.style.width = w + 'px'; box.style.height = h + 'px';
+  if (shot.bg) box.style.background = 'linear-gradient(135deg, #a78bfa, #f472b6 50%, #fb923c)';
+  const pad = shot.bg ? Math.min(w, h) * .08 : 0;
+  const kk = shot.bg ? Math.min((w - 2 * pad) / r.w, (h - 2 * pad) / r.h) : k;
+  const ox = (w - r.w * kk) / 2, oy = (h - r.h * kk) / 2;
+  const inner = document.createElement('div');
+  inner.style.cssText = `position:absolute;left:${ox}px;top:${oy}px;width:${r.w * kk}px;height:${r.h * kk}px;overflow:hidden;${shot.bg ? 'border-radius:6px;box-shadow:0 6px 16px #0007;' : ''}`;
+  const clip = document.createElement('div'); clip.className = 'clip';
+  clip.innerHTML = shot.html;
+  const node = clip.firstElementChild;
+  const ax = shot.win ? 0 : shot.rect.x, ay = shot.win ? 0 : shot.rect.y;
+  clip.style.cssText = `left:${-(ax + r.x) * kk}px;top:${-(ay + r.y) * kk}px;width:${shot.win ? shot.rect.w : W}px;height:${shot.win ? shot.rect.h : DESK_H}px;transform:scale(${kk})`;
+  if (shot.win && node) node.style.position = 'absolute';
+  inner.appendChild(clip);
+  const mk = document.createElement('div'); mk.className = 'marks';
+  mk.style.cssText = `left:${-r.x * kk}px;top:${-r.y * kk}px;width:${shot.rect.w}px;height:${shot.rect.h}px;transform:scale(${kk})`;
+  drawMarks(mk, shot.marks, shot.rect.w, shot.rect.h, null);
+  inner.appendChild(mk);
+  box.appendChild(inner);
+  return box;
+}
+
+/* ---------------- history (shared list) ---------------- */
+let history = [
+  { id: 'h1', kind: 'text', text: 'dotnet test --filter Capture', at: Date.now() - 60000, pinned: false },
+  { id: 'h2', kind: 'text', text: 'https://github.com/donovanhiland/navi/releases/latest/download/Navi.zip', at: Date.now() - 120000, pinned: true },
+  { id: 'h3', kind: 'text', text: 'Thanks! Shipping the Windows beta Friday.\nCan you test on your Surface?', at: Date.now() - 300000, pinned: false },
+  { id: 'h4', kind: 'text', text: '#3b82f6', at: Date.now() - 400000, pinned: false },
+];
+const addHistory = item => { history = [Object.freeze({ id: 'h' + Math.random().toString(36).slice(2), at: Date.now(), pinned: false, ...item }), ...history]; };
+const updateHistoryShot = shot => { history = history.map(h => h.shot && h.shot.id === shot.id ? { ...h, shot } : h); };
+
+/* ---------------- corner cards ---------------- */
+let hoveredCard = null;
+function addCard(shot) {
+  addHistory({ kind: shot.kind === 'video' ? 'video' : 'image', shot, text: shot.kind === 'video' ? `Recording ${fmtDur(shot.dur)}` : `Screenshot ${Math.round(shot.rect.w)} × ${Math.round(shot.rect.h)}` });
+  const c = document.createElement('div'); c.className = 'card'; c.draggable = true;
+  c._shot = shot;
+  paintCard(c);
+  $('#cards').appendChild(c);
+  return c;
+}
+function paintCard(c) {
+  const shot = c._shot;
+  const vid = shot.kind === 'video';
+  c.innerHTML = `<div class="thumb"></div>
+    ${vid ? `<span class="badge">${fmtDur(shot.dur)} · ${shot.fmt}</span>` : ''}
+    <div class="hover">
+      ${vid ? `<div class="fmt"><button data-f="MP4" class="${shot.fmt === 'MP4' ? 'on' : ''}">MP4</button><button data-f="GIF" class="${shot.fmt === 'GIF' ? 'on' : ''}">GIF</button></div>` : ''}
+      <button class="big" data-c="copy">Copy</button><button class="big" data-c="save">Save</button>
+    </div>
+    <button class="corner tl" data-c="pin" title="Pin to screen (Ctrl+P)">${ic(I.pin, 13)}</button>
+    <button class="corner tr" data-c="close" title="Close (Ctrl+W)">${ic(I.x, 13)}</button>
+    <button class="corner bl" data-c="${vid ? 'trim' : 'mark'}" title="${vid ? 'Trim (Ctrl+E)' : 'Markup (Ctrl+E)'}">${ic(vid ? I.scissors : I.mark, 13)}</button>
+    <button class="corner br" data-c="explorer" title="Show in Explorer">${ic(I.folder, 13)}</button>`;
+  $('.thumb', c).appendChild(shotView(shot, 210, 132));
+  if (vid) $$('.corner.tl', c).forEach(b => b.remove());
+}
+function cardAct(c, a, alt) {
+  const shot = c._shot;
+  const name = `Navi 2026-11-16 at 16.10.${String(10 + shot.id).padStart(2, '0')}.${shot.kind === 'video' ? shot.fmt.toLowerCase() : 'png'}`;
+  if (a === 'copy') { toast(alt ? 'Copied. Card kept open (Alt).' : 'Copied'); if (!alt) closeCard(c); }
+  if (a === 'save') { toast(`Saved to Pictures\\Screenshots\\${name}`, 2800); closeCard(c); }
+  if (a === 'close') closeCard(c);
+  if (a === 'explorer') toast(`File Explorer opened with ${name} selected`);
+  if (a === 'pin') pinShot(shot);
+  if (a === 'mark') openEditor(c);
+  if (a === 'trim') openTrim(c);
+}
+function closeCard(c) { c.style.transition = 'transform .22s, opacity .22s'; c.style.transform = 'translateX(-240px)'; c.style.opacity = '0'; setTimeout(() => c.remove(), 220); if (hoveredCard === c) hoveredCard = null; }
+$('#cards').addEventListener('click', e => {
+  const c = e.target.closest('.card'); if (!c) return;
+  const f = e.target.closest('[data-f]');
+  if (f) { c._shot = Object.freeze({ ...c._shot, fmt: f.dataset.f }); paintCard(c); toast(f.dataset.f === 'GIF' ? 'Made a GIF with gifski' : 'Back to MP4'); return; }
+  const b = e.target.closest('[data-c]'); if (b) cardAct(c, b.dataset.c, e.altKey);
+});
+$('#cards').addEventListener('mouseover', e => { hoveredCard = e.target.closest('.card'); });
+$('#cards').addEventListener('mouseleave', () => { hoveredCard = null; });
+let dragShot = null;
+$('#cards').addEventListener('dragstart', e => { const c = e.target.closest('.card'); dragShot = c ? c._shot : null; e.dataTransfer.setData('text/plain', 'navi'); e.dataTransfer.effectAllowed = 'copy'; });
+const dz = $('#dropzone');
+const chatWin = dz.closest('.win');
+chatWin.addEventListener('dragover', e => { if (dragShot) { e.preventDefault(); dz.classList.add('over'); } });
+chatWin.addEventListener('dragleave', e => { if (!chatWin.contains(e.relatedTarget)) dz.classList.remove('over'); });
+chatWin.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if (dragShot) sendToChat(dragShot); dragShot = null; });
+function sendToChat(shot) {
+  const m = document.createElement('div'); m.className = 'msg';
+  m.innerHTML = `<b>You</b> ${shot.kind === 'video' ? `Navi recording.${shot.fmt.toLowerCase()}` : 'Navi screenshot.png'}<div class="att"></div>`;
+  $('.att', m).appendChild(shotView(shot, 150, 84));
+  $('#msgs').appendChild(m);
+  setTimeout(() => { const r = document.createElement('div'); r.className = 'msg'; r.innerHTML = '<b>Sam</b> same card, same drag. nice'; $('#msgs').appendChild(r); }, 900);
+}
+
+/* ---------------- pin ---------------- */
+function pinShot(shot) {
+  const w0 = Math.min(320, shot.rect.w), h0 = w0 * shot.rect.h / shot.rect.w;
+  const p = document.createElement('div'); p.className = 'pinned';
+  let st = { x: 640, y: 60, w: w0, op: 1 };
+  const apply = () => { const h = st.w * shot.rect.h / shot.rect.w; p.style.cssText = `left:${st.x}px;top:${st.y}px;width:${st.w}px;height:${h}px;opacity:${st.op}`; const v = $('.shot', p); if (v) v.remove(); p.prepend(shotView(shot, st.w, h, { fitMode: 'contain' })); };
+  p.innerHTML = `<div class="pctl"><input type="range" min="20" max="100" value="100" title="Opacity"><button data-p="lock">Lock</button><button data-p="close">${ic(I.x, 12)}</button></div>`;
+  apply();
+  screen.appendChild(p);
+  $('input', p).addEventListener('input', e => { st = { ...st, op: e.target.value / 100 }; p.style.opacity = st.op; });
+  p.addEventListener('click', e => { const b = e.target.closest('[data-p]'); if (!b) return; if (b.dataset.p === 'close') p.remove(); else { p.classList.add('locked'); toast('Locked. Clicks go through it. Unlock from the Navi menu.', 2800); } });
+  p.addEventListener('wheel', e => { e.preventDefault(); st = { ...st, w: Math.max(80, Math.min(700, st.w * (e.deltaY < 0 ? 1.08 : .93))) }; apply(); }, { passive: false });
+  p.addEventListener('mousedown', e => {
+    if (e.target.closest('.pctl')) return;
+    const s0 = pt(e), o = { ...st };
+    const mv = ev => { const q = pt(ev); st = { ...o, x: o.x + q.x - s0.x, y: o.y + q.y - s0.y }; p.style.left = st.x + 'px'; p.style.top = st.y + 'px'; };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  });
+  toast('Pinned. Scroll to resize, drag to move.');
+}
+
+/* ---------------- capture overlay ---------------- */
+const ov = $('#overlay'), sel = $('#sel'), selSize = $('#selSize'), mag = $('#mag'), winHl = $('#winHl'), modeTag = $('#modeTag');
+let cap = null;
+const MODE_TAG = {
+  area: () => `Drag to capture. Space for window. Esc cancels.`,
+  window: () => 'Click a window. Space for area. Esc cancels.',
+  ocr: () => 'Drag over text to copy it. Esc cancels.',
+  rec: () => 'Drag the area to record. Space for window. Esc cancels.',
+  aio: () => 'Drag an area, then Capture or Enter.',
+};
+function startCapture(mode) {
+  closePops(); closeHist();
+  cap = { mode, window: mode === 'window', start: null, rect: null, aio: mode === 'aio' };
+  ov.classList.add('on'); ov.classList.toggle('windowMode', cap.window); ov.classList.remove('selecting');
+  sel.style.display = 'none'; selSize.style.display = 'none'; winHl.style.display = 'none';
+  modeTag.textContent = (MODE_TAG[cap.window ? 'window' : mode] || MODE_TAG.area)();
+  const z = $('.zoom', mag); z.innerHTML = ''; const dc = cloneDesk(false); dc.style.position = 'absolute'; z.appendChild(dc);
+  moveCross(mouse);
+}
+function endCapture() { cap = null; ov.classList.remove('on'); $('#aio').classList.remove('on'); winHl.style.display = 'none'; $$('.win.hl').forEach(w => w.classList.remove('hl')); }
+const ZOOM = 92 / 11;
+function sampleHex(p) {
+  const els = document.elementsFromPoint(...toClient(p)).filter(el => desktop.contains(el));
+  for (const el of els) { const bg = getComputedStyle(el).backgroundColor; const m = bg.match(/rgba?\((\d+), (\d+), (\d+)(?:, ([\d.]+))?\)/); if (m && (m[4] === undefined || +m[4] > .5) && el !== desktop) return '#' + [m[1], m[2], m[3]].map(v => (+v).toString(16).padStart(2, '0')).join('').toUpperCase(); }
+  const t = Math.min(1, Math.hypot(p.x - 680, (p.y - 375) * 1.2) / 420);
+  const lerp = (a, b) => Math.round(a + (b - a) * t);
+  return '#' + [lerp(0x6a, 0x10), lerp(0xa6, 0x2a), lerp(0xff, 0x63)].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+function toClient(p) { const r = screen.getBoundingClientRect(); const k = r.width / W; return [r.left + p.x * k, r.top + p.y * k]; }
+function moveCross(p) {
+  $('.xh', ov).style.top = p.y + 'px'; $('.yh', ov).style.left = p.x + 'px';
+  const right = p.x + 12 + 92 < W - 6, down = p.y + 12 + 112 < H - 6;
+  mag.style.left = (right ? p.x + 12 : p.x - 12 - 92) + 'px';
+  mag.style.top = (down ? p.y + 12 : p.y - 12 - 112) + 'px';
+  const z = $('.zoom', mag);
+  z.style.transform = `translate(${-(p.x - 5.5) * ZOOM}px, ${-(p.y - 5.5) * ZOOM}px) scale(${ZOOM})`;
+  ov.style.pointerEvents = 'none';
+  const hex = sampleHex(p);
+  ov.style.pointerEvents = '';
+  $('#magHex').textContent = hex; $('#magSw').style.background = hex; $('#magXY').textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+}
+function winAt(p) {
+  return $$('.win', desktop).reverse().find(w => p.x >= w.offsetLeft && p.x <= w.offsetLeft + w.offsetWidth && p.y >= w.offsetTop && p.y <= w.offsetTop + w.offsetHeight);
+}
+ov.addEventListener('mousemove', e => {
+  if (!cap) return;
+  const p = pt(e);
+  if (cap.window) {
+    const w = winAt(p);
+    if (w) { winHl.style.cssText = `display:block;left:${w.offsetLeft - 2}px;top:${w.offsetTop - 2}px;width:${w.offsetWidth + 4}px;height:${w.offsetHeight + 4}px`; } else winHl.style.display = 'none';
+    return;
+  }
+  moveCross(p);
+  if (cap.start && cap.dragging) {
+    const r = { x: Math.min(p.x, cap.start.x), y: Math.min(p.y, cap.start.y), w: Math.abs(p.x - cap.start.x), h: Math.abs(p.y - cap.start.y) };
+    cap.rect = r; drawSel(r);
+  }
+});
+function drawSel(r) {
+  ov.classList.add('selecting');
+  sel.style.cssText = `display:block;left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px`;
+  selSize.style.cssText = `display:block;left:${r.x}px;top:${Math.max(0, r.y - 22)}px`;
+  selSize.textContent = `${Math.round(r.w * 2)} × ${Math.round(r.h * 2)}`;
+}
+ov.addEventListener('mousedown', e => {
+  if (!cap || e.button !== 0) return;
+  const p = pt(e);
+  if (cap.window) {
+    const w = winAt(p); if (!w) return;
+    const rect = { x: w.offsetLeft, y: w.offsetTop, w: w.offsetWidth, h: w.offsetHeight };
+    const mode = cap.mode; endCapture(); finishCapture(mode, rect, w.dataset.name); return;
+  }
+  cap.start = p; cap.dragging = true;
+});
+ov.addEventListener('mouseup', e => {
+  if (!cap || !cap.dragging) return;
+  cap.dragging = false;
+  const r = cap.rect;
+  if (!r || r.w < 8 || r.h < 8) { cap.start = null; ov.classList.remove('selecting'); sel.style.display = 'none'; selSize.style.display = 'none'; return; }
+  if (cap.aio) { modeTag.textContent = 'Drag again to change it. Capture or Enter takes it.'; return; }
+  const mode = cap.mode; endCapture(); finishCapture(mode, clampRect(r));
+});
+const clampRect = r => ({ x: Math.max(0, r.x), y: Math.max(0, r.y), w: Math.min(r.w, W - Math.max(0, r.x)), h: Math.min(r.h, DESK_H - Math.max(0, r.y)) });
+function finishCapture(mode, rect, winName) {
+  if (mode === 'rec') return openRecHud(rect, winName);
+  if (mode === 'ocr') {
+    const txt = ocrText(rect);
+    addHistory({ kind: 'text', text: txt, tag: 'OCR' });
+    toast(`Copied text: "${txt.length > 60 ? txt.slice(0, 60) + '…' : txt}"`, 3000); return;
+  }
+  if (S.hideIcons && !winName) iconBlink();
+  const shot = makeShot(rect, { win: winName });
+  if (S.editAfterCapture && !winName) return openInPlace(shot);
+  addCard(shot);
+  if (S.copyToClipboard) toast('Copied to the clipboard', 1300);
+}
+function iconBlink() { const icons = $('#dicons'); icons.style.opacity = '0'; setTimeout(() => { icons.style.opacity = ''; }, 160); }
+function ocrText(r) {
+  const parts = $$('.win', desktop).filter(w => !(w.offsetLeft > r.x + r.w || w.offsetLeft + w.offsetWidth < r.x || w.offsetTop > r.y + r.h || w.offsetTop + w.offsetHeight < r.y));
+  const t = parts.map(w => $('.body', w).innerText.replace(/\s+/g, ' ').trim()).join(' ');
+  return t || 'Old stuff  IMG_2231.png  misc';
+}
+function fullscreen() {
+  closePops();
+  if (S.hideIcons) iconBlink();
+  const f = $('#flash'); f.style.transition = 'none'; f.style.opacity = '.5'; requestAnimationFrame(() => { f.style.transition = 'opacity .3s'; f.style.opacity = '0'; });
+  const shot = makeShot({ x: 0, y: 0, w: W, h: DESK_H });
+  addCard(shot);
+}
+function countdown(n, done) {
+  const c = $('#countdown'); c.style.display = 'flex'; c.textContent = n;
+  const t = setInterval(() => { n -= 1; if (n <= 0) { clearInterval(t); c.style.display = 'none'; done(); } else c.textContent = n; }, 700);
+}
+
+/* ---------------- all-in-one bar ---------------- */
+const aio = $('#aio');
+let aioMode = 'area', aioTimer = 0;
+function renderAio() {
+  const b = (m, label, icon) => `<button data-m="${m}" class="${aioMode === m ? 'on' : ''}">${ic(icon, 18)}<span>${label}</span></button>`;
+  aio.innerHTML = b('area', 'Area', I.area) + b('window', 'Window', I.window) + b('full', 'Fullscreen', I.full) + b('scroll', 'Scrolling', I.scroll) + b('ocr', 'Text', I.ocr) + b('rec', 'Record', I.rec)
+    + '<span class="sep"></span>' + `<button data-t="1">${ic(I.timer, 18)}<span>${aioTimer ? aioTimer + ' s' : 'No timer'}</span></button>`
+    + '<span class="sep"></span>' + `<button class="go" data-go="1">${aioMode === 'ocr' ? 'Copy Text' : aioMode === 'scroll' ? 'Start Scrolling' : 'Capture'}</button>`
+    + `<button data-x="1" title="Close (Esc)">${ic(I.x, 16)}</button>`;
+}
+function openAio() { aioMode = 'area'; renderAio(); startCapture('aio'); aio.classList.add('on'); }
+aio.addEventListener('mousedown', e => e.stopPropagation());
+aio.addEventListener('click', e => {
+  const m = e.target.closest('[data-m]'), t = e.target.closest('[data-t]'), go = e.target.closest('[data-go]'), x = e.target.closest('[data-x]');
+  if (x) return endCapture();
+  if (t) { aioTimer = aioTimer === 0 ? 3 : aioTimer === 3 ? 5 : 0; renderAio(); return; }
+  if (m) {
+    aioMode = m.dataset.m; renderAio();
+    if (aioMode === 'window') { cap.window = true; ov.classList.add('windowMode'); modeTag.textContent = MODE_TAG.window(); }
+    else { cap.window = false; ov.classList.remove('windowMode'); }
+    if (aioMode === 'full') { endCapture(); withTimer(fullscreen); }
+    if (aioMode === 'rec' && cap.rect) { const r = clampRect(cap.rect); endCapture(); openRecHud(r); }
+    else if (aioMode === 'rec') { cap.mode = 'rec'; cap.aio = false; modeTag.textContent = MODE_TAG.rec(); }
+    return;
+  }
+  if (go) aioGo();
+});
+function withTimer(fn) { if (aioTimer) countdown(aioTimer, fn); else fn(); }
+function aioGo() {
+  if (!cap) return;
+  if (aioMode === 'scroll') { endCapture(); return scrolling(); }
+  if (!cap.rect) { toast('Drag an area first'); return; }
+  const r = clampRect(cap.rect), mode = aioMode === 'ocr' ? 'ocr' : 'area';
+  endCapture(); withTimer(() => finishCapture(mode, r));
+}
+
+/* ---------------- scrolling capture ---------------- */
+function scrolling() {
+  closePops();
+  const strip = $('#scrollStrip'), body = $('#stripBody'); body.innerHTML = ''; strip.style.display = 'block';
+  const np = $$('.win', desktop).find(w => w.dataset.name === 'Notepad');
+  const rect = { x: np.offsetLeft, y: np.offsetTop + 60, w: np.offsetWidth, h: 200 };
+  let n = 0;
+  const t = setInterval(() => {
+    n += 1;
+    const piece = shotView(makeShot(rect), 148, 78, { fitMode: 'contain' }); piece.style.marginBottom = '2px'; body.appendChild(piece);
+    if (n >= 5) { clearInterval(t); setTimeout(() => { strip.style.display = 'none'; const shot = makeShot({ ...rect, h: 200 }); const tall = Object.freeze({ ...shot, rect: Object.freeze({ ...shot.rect }) }); addCard(tall); toast('Scrolling capture: 5 frames stitched, 760 × 1840'); }, 400); }
+  }, 450);
+  toast('Scroll the window. Navi lines up each frame. Esc or Enter ends.', 2200);
+}
+
+/* ---------------- recording ---------------- */
+const recHud = $('#recHud'), recFrame = $('#recFrame');
+let recRect = null, recOptsOn = false;
+function openRecHud(rect, winName) {
+  recRect = rect;
+  recFrame.className = 'dimout';
+  recFrame.style.cssText = `display:block;left:${rect.x - 2}px;top:${rect.y - 2}px;width:${rect.w + 4}px;height:${rect.h + 4}px`;
+  $('#recW').value = Math.round(rect.w * 2); $('#recH').value = Math.round(rect.h * 2);
+  const top = rect.y + rect.h + 12 + 136 < DESK_H ? rect.y + rect.h + 12 : Math.max(8, rect.y - 148);
+  recHud.style.cssText = `display:flex;left:${Math.min(W - 310, Math.max(8, rect.x + rect.w / 2 - 150))}px;top:${top}px`;
+  recHud._win = winName || null;
+}
+recHud.addEventListener('mousedown', e => e.stopPropagation());
+$('#recSettings').addEventListener('click', () => { recOptsOn = !recOptsOn; $('#recOpts').classList.toggle('on', recOptsOn); });
+$('[data-opt="mic"]', recHud).addEventListener('click', e => e.currentTarget.classList.toggle('on'));
+$('#recFull').addEventListener('click', () => openRecHud({ x: 0, y: 0, w: W, h: DESK_H }));
+$$('#recHud .row').forEach(r => r.addEventListener('click', () => startRec(r.dataset.rec)));
+function startRec(fmt) {
+  recHud.style.display = 'none'; $('#recOpts').classList.remove('on'); recOptsOn = false;
+  recFrame.className = '';
+  countdown(3, () => {
+    recFrame.className = 'live';
+    if ($('#optIcons').checked) $('#dicons').style.opacity = '0';
+    if ($('#optCam').checked) { const c = $('#cam'); c.style.display = 'block'; c.style.left = (recRect.x + recRect.w - 110) + 'px'; c.style.top = (recRect.y + recRect.h - 110) + 'px'; }
+    recording = { fmt, t0: Date.now(), timer: setInterval(tick, 250), rect: recRect, win: recHud._win };
+    $('#recTray').classList.add('on'); tick(); renderMenu();
+    setTimeout(() => { if (recording) winToast('Chat', 'Sam', ' are we still on for 3?', $('#optNotif').checked ? 'Left out of the video (needs a Windows spike, see D6)' : ''); }, 2000);
+  });
+}
+function tick() { if (recording) $('#recTime').textContent = fmtDur((Date.now() - recording.t0) / 1000); }
+function fmtDur(s) { const m = Math.floor(s / 60), r = Math.floor(s % 60); return `${m}:${String(r).padStart(2, '0')}`; }
+function stopRec() {
+  if (!recording) return;
+  clearInterval(recording.timer);
+  const dur = (Date.now() - recording.t0) / 1000;
+  const shot = Object.freeze({ ...makeShot(recording.rect, { win: recording.win, kind: 'video', dur }), fmt: recording.fmt });
+  recording = null;
+  $('#recTray').classList.remove('on'); recFrame.style.display = 'none'; $('#cam').style.display = 'none'; $('#dicons').style.opacity = ''; $('#keys').style.display = 'none';
+  renderMenu();
+  addCard(shot);
+}
+$('#recTray').addEventListener('click', e => { e.stopPropagation(); stopRec(); });
+screen.addEventListener('mousedown', e => {
+  if (!recording || !$('#optClicks').checked) return;
+  const p = pt(e), r = document.createElement('div'); r.className = 'ripple'; r.style.left = p.x + 'px'; r.style.top = p.y + 'px'; screen.appendChild(r); setTimeout(() => r.remove(), 520);
+}, true);
+
+/* ---------------- trim ---------------- */
+const trim = $('#trim');
+let trimCard = null;
+function openTrim(c) {
+  trimCard = c; const shot = c._shot;
+  const film = $('#film'); film.innerHTML = '';
+  for (let i = 0; i < 8; i++) { const f = document.createElement('div'); f.className = 'fr'; f.appendChild(shotView(shot, 90, 64)); film.appendChild(f); }
+  const s = document.createElement('div'); s.className = 'trimSel'; film.appendChild(s);
+  $('#trimA').value = 0; $('#trimB').value = 100; updTrim();
+  trim.style.left = '190px'; trim.style.top = '150px'; trim.classList.add('on');
+}
+function updTrim() {
+  let a = +$('#trimA').value, b = +$('#trimB').value; if (a > b - 5) { a = b - 5; $('#trimA').value = a; }
+  const s = $('.trimSel', trim); s.style.left = a + '%'; s.style.width = (b - a) + '%';
+  const d = trimCard ? trimCard._shot.dur : 7;
+  $('#trimLbl').textContent = `${(d * a / 100).toFixed(1)} s to ${(d * b / 100).toFixed(1)} s · ${(d * (b - a) / 100).toFixed(1)} s`;
+}
+$('#trimA').addEventListener('input', updTrim); $('#trimB').addEventListener('input', updTrim);
+const closeTrim = () => trim.classList.remove('on');
+$('#trimCancel').addEventListener('click', closeTrim); $('#trimX').addEventListener('click', closeTrim);
+$('#trimSave').addEventListener('click', () => {
+  const d = trimCard._shot.dur * (+$('#trimB').value - +$('#trimA').value) / 100;
+  trimCard._shot = Object.freeze({ ...trimCard._shot, dur: d }); paintCard(trimCard); closeTrim(); toast(`Trimmed to ${fmtDur(d)}`);
+});
+
+/* ---------------- markup editor ---------------- */
+const editor = $('#editor'), edStage = $('#edStage');
+const TOOLS = [['select', 'V', 'Select'], ['arrow', 'A', 'Arrow'], ['rect', 'R', 'Rectangle'], ['fill', 'F', 'Filled rectangle'], ['ellipse', 'O', 'Ellipse'], ['line', 'L', 'Line'], ['pencil', 'P', 'Pencil'], ['hi', 'H', 'Highlighter'], ['text', 'T', 'Text'], ['counter', 'N', 'Counter'], ['blur', 'B', 'Blur'], ['pix', 'X', 'Pixelate'], ['spot', 'S', 'Spotlight'], ['crop', 'C', 'Crop']];
+const COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#a855f7', '#ffffff', '#111111'];
+const SIZES = [2, 4, 7];
+let ed = null;
+function renderTools() {
+  const t = $('#tools');
+  t.innerHTML = TOOLS.map(([id, k, n], i) => `${i === 1 || i === 10 ? '<span class="sep"></span>' : ''}<button data-tool="${id}" title="${n} (${k})" class="${ed && ed.tool === id ? 'on' : ''}">${ic(I[id], 17)}</button>`).join('')
+    + '<span class="sep"></span>' + COLORS.map(c => `<button class="swb ${ed && ed.color === c ? 'on' : ''}" data-color="${c}" title="Color"><span class="sw8" style="background:${c}"></span></button>`).join('')
+    + '<span class="sep"></span>' + SIZES.map((s, i) => `<button data-size="${s}" class="swb ${ed && ed.size === s ? 'on' : ''}" title="Line size ${i + 1}"><span class="szdot" style="width:${4 + i * 3}px;height:${4 + i * 3}px"></span></button>`).join('')
+    + '<span class="sep"></span>' + `<button data-op="undo" title="Undo (Ctrl+Z)">${ic(I.undo, 16)}</button><button data-op="redo" title="Redo (Ctrl+Shift+Z)">${ic(I.redo, 16)}</button><button data-op="rotate" title="Rotate">${ic(I.rotate, 16)}</button><button data-op="flip" title="Flip">${ic(I.flip, 16)}</button>`
+    + `<button class="txt" data-op="bg" title="Background tool">Background</button><span class="grow"></span><span class="dragme" draggable="true" title="Drag into any app" id="dragme"></span>`
+    + '<button class="txt" data-op="cancel">Cancel</button><button class="done" data-op="done">' + (ed && ed.inplace ? 'Copy' : 'Done') + '</button>';
+  if (ed) { const d = $('#dragme'); d.innerHTML = ''; d.appendChild(shotView(edShot(), 40, 28)); }
+}
+const edShot = () => Object.freeze({ ...ed.shot, marks: Object.freeze(ed.marks.slice()), bg: ed.bg, crop: ed.crop });
+function openEditor(card) {
+  const shot = card._shot;
+  ed = { card, shot, marks: shot.marks.slice(), undo: [], redo: [], tool: 'arrow', color: '#ef4444', size: 4, selected: null, bg: shot.bg, crop: shot.crop, flip: false, rot: 0, inplace: false };
+  editor.classList.remove('inplace'); $('#inplaceDim').style.display = 'none';
+  editor.style.cssText = 'left:90px;top:40px;width:920px';
+  editor.classList.add('on');
+  layoutStage(); renderTools();
+}
+function openInPlace(shot) {
+  ed = { card: null, shot, marks: [], undo: [], redo: [], tool: 'arrow', color: '#ef4444', size: 4, selected: null, bg: false, crop: null, flip: false, rot: 0, inplace: true };
+  editor.classList.add('inplace'); $('#inplaceDim').style.display = 'block';
+  editor.style.cssText = `left:${shot.rect.x}px;top:${shot.rect.y}px;width:${shot.rect.w}px`;
+  editor.classList.add('on');
+  layoutStage(); renderTools();
+  const tb = $('#tools'); const below = shot.rect.y + shot.rect.h + 54 < DESK_H;
+  tb.style.top = below ? (shot.rect.h + 10) + 'px' : (shot.rect.y > 54 ? '-50px' : '10px');
+  tb.style.zIndex = 6;
+}
+function layoutStage() {
+  const r = ed.crop || { x: 0, y: 0, w: ed.shot.rect.w, h: ed.shot.rect.h };
+  const k = ed.inplace ? 1 : Math.min(860 / r.w, (ed.bg ? 320 : 380) / r.h, 2.2);
+  ed.k = k;
+  $('#edFrame').classList.toggle('bg', ed.bg && !ed.inplace);
+  edStage.style.width = r.w * k + 'px'; edStage.style.height = r.h * k + 'px';
+  edStage.style.transform = `${ed.flip ? 'scaleX(-1)' : ''} rotate(${ed.rot}deg)`;
+  edStage.classList.toggle('sel', ed.tool === 'select');
+  edStage.innerHTML = '';
+  const view = shotView(Object.freeze({ ...ed.shot, marks: Object.freeze([]), bg: false, crop: ed.crop }), r.w * k, r.h * k);
+  edStage.appendChild(view);
+  const mk = document.createElement('div'); mk.className = 'marks';
+  mk.style.cssText = `left:${-r.x * k}px;top:${-r.y * k}px;width:${ed.shot.rect.w}px;height:${ed.shot.rect.h}px;transform:scale(${k});`;
+  drawMarks(mk, ed.marks, ed.shot.rect.w, ed.shot.rect.h, ed.selected, ed.draft);
+  edStage.appendChild(mk);
+  const hit = document.createElement('div'); hit.className = 'hit'; edStage.appendChild(hit);
+}
+function stagePt(e) { const r = edStage.getBoundingClientRect(); const c = ed.crop || { x: 0, y: 0, w: ed.shot.rect.w, h: ed.shot.rect.h }; let x = (e.clientX - r.left) / r.width * c.w; if (ed.flip) x = c.w - x; return { x: x + c.x, y: (e.clientY - r.top) / r.height * c.h + c.y }; }
+const commit = marks => { ed.undo = [...ed.undo, ed.marks]; ed.redo = []; ed.marks = marks; };
+function bbox(m) {
+  if (m.type === 'pencil' || m.type === 'hi') { const xs = m.pts.map(p => p[0]), ys = m.pts.map(p => p[1]); return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }; }
+  if (m.type === 'counter') return { x: m.x1 - 13, y: m.y1 - 13, w: 26, h: 26 };
+  if (m.type === 'text') return { x: m.x1, y: m.y1 - 20, w: Math.max(20, m.text.length * 10), h: 26 };
+  return { x: Math.min(m.x1, m.x2), y: Math.min(m.y1, m.y2), w: Math.abs(m.x2 - m.x1), h: Math.abs(m.y2 - m.y1) };
+}
+const moveMark = (m, dx, dy) => m.pts ? { ...m, pts: m.pts.map(([x, y]) => [x + dx, y + dy]) } : { ...m, x1: m.x1 + dx, y1: m.y1 + dy, x2: (m.x2 ?? m.x1) + dx, y2: (m.y2 ?? m.y1) + dy };
+function drawMarks(host, marks, w, h, selectedId, draft) {
+  const all = draft ? [...marks, draft] : marks;
+  const fx = all.filter(m => m.type === 'blur' || m.type === 'pix' || m.type === 'spot');
+  host.innerHTML = fx.map(m => { const b = bbox(m); if (m.type === 'spot') return `<div style="position:absolute;left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;border-radius:10px;box-shadow:0 0 0 9999px #000a"></div>`; return `<div style="position:absolute;left:${b.x}px;top:${b.y}px;width:${b.w}px;height:${b.h}px;backdrop-filter:${m.type === 'blur' ? 'blur(6px)' : 'blur(3px) contrast(1.3)'};-webkit-backdrop-filter:${m.type === 'blur' ? 'blur(6px)' : 'blur(3px) contrast(1.3)'};${m.type === 'pix' ? 'background-image:linear-gradient(#0003 1px,transparent 1px),linear-gradient(90deg,#0003 1px,transparent 1px);background-size:8px 8px;' : 'background:#ffffff10;'}"></div>`; }).join('');
+  let n = 0;
+  const svgParts = all.map(m => {
+    const sw = m.size, c = m.color;
+    if (m.type === 'arrow') { const a = Math.atan2(m.y2 - m.y1, m.x2 - m.x1), L = 6 + sw * 3.2, s = .5; const p1 = [m.x2 - L * Math.cos(a - s), m.y2 - L * Math.sin(a - s)], p2 = [m.x2 - L * Math.cos(a + s), m.y2 - L * Math.sin(a + s)]; const ex = m.x2 - L * .7 * Math.cos(a), ey = m.y2 - L * .7 * Math.sin(a); return `<line x1="${m.x1}" y1="${m.y1}" x2="${ex}" y2="${ey}" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/><polygon points="${m.x2},${m.y2} ${p1} ${p2}" fill="${c}"/>`; }
+    if (m.type === 'rect' || m.type === 'fill') { const b = bbox(m); return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="3" ${m.type === 'fill' ? `fill="${c}"` : `fill="none" stroke="${c}" stroke-width="${sw}"`}/>`; }
+    if (m.type === 'ellipse') { const b = bbox(m); return `<ellipse cx="${b.x + b.w / 2}" cy="${b.y + b.h / 2}" rx="${b.w / 2}" ry="${b.h / 2}" fill="none" stroke="${c}" stroke-width="${sw}"/>`; }
+    if (m.type === 'line') return `<line x1="${m.x1}" y1="${m.y1}" x2="${m.x2}" y2="${m.y2}" stroke="${c}" stroke-width="${sw}" stroke-linecap="round"/>`;
+    if (m.type === 'pencil') return `<polyline points="${m.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    if (m.type === 'hi') return `<polyline points="${m.pts.map(p => p.join(',')).join(' ')}" fill="none" stroke="${c}" stroke-opacity=".4" stroke-width="${sw * 4}" stroke-linecap="square" stroke-linejoin="round"/>`;
+    if (m.type === 'counter') { n += 1; return `<circle cx="${m.x1}" cy="${m.y1}" r="12" fill="${c}"/><text x="${m.x1}" y="${m.y1 + 4.5}" text-anchor="middle" font-size="13" font-weight="700" font-family="Segoe UI, sans-serif" fill="${c === '#ffffff' ? '#111' : '#fff'}">${n}</text>`; }
+    if (m.type === 'text') return `<text x="${m.x1}" y="${m.y1}" font-size="18" font-weight="700" font-family="Segoe UI, sans-serif" fill="${c}" stroke="#0008" stroke-width=".6" paint-order="stroke">${escapeHtml(m.text)}</text>`;
+    if (m.type === 'crop') { const b = bbox(m); return `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="#fff" stroke-width="1.5" stroke-dasharray="6 4"/><rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="6 4" stroke-dashoffset="5"/>`; }
+    return '';
+  });
+  const s = selectedId != null ? all.find(m => m.id === selectedId) : null;
+  if (s) { const b = bbox(s); svgParts.push(`<rect x="${b.x - 5}" y="${b.y - 5}" width="${b.w + 10}" height="${b.h + 10}" fill="none" stroke="#3b82f6" stroke-width="1.2" stroke-dasharray="4 3"/>`); }
+  host.insertAdjacentHTML('beforeend', `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="position:absolute;left:0;top:0;overflow:visible">${svgParts.join('')}</svg>`);
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch])); }
+let markSeq = 1;
+edStage.addEventListener('mousedown', e => {
+  if (!ed || e.button !== 0 || e.target.closest('.tedit')) return;
+  e.preventDefault();
+  const p = stagePt(e);
+  if ($('.tedit', edStage)) { endText(); return; }
+  if (ed.tool === 'select') {
+    const hitM = [...ed.marks].reverse().find(m => { const b = bbox(m); return p.x >= b.x - 6 && p.x <= b.x + b.w + 6 && p.y >= b.y - 6 && p.y <= b.y + b.h + 6; });
+    ed.selected = hitM ? hitM.id : null; layoutStage();
+    if (!hitM) return;
+    const before = ed.marks;
+    const mv = ev => { const q = stagePt(ev); ed.marks = before.map(m => m.id === hitM.id ? moveMark(m, q.x - p.x, q.y - p.y) : m); layoutStage(); };
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); if (ed.marks !== before) { ed.undo = [...ed.undo, before]; ed.redo = []; } };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+    return;
+  }
+  if (ed.tool === 'text') { openText(p); return; }
+  if (ed.tool === 'counter') { const m = { id: markSeq++, type: 'counter', x1: p.x, y1: p.y, color: ed.color, size: ed.size }; commit([...ed.marks, m]); ed.selected = m.id; layoutStage(); return; }
+  const base = { id: markSeq++, type: ed.tool, color: ed.color, size: ed.size };
+  ed.draft = (ed.tool === 'pencil' || ed.tool === 'hi') ? { ...base, pts: [[p.x, p.y]] } : { ...base, x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+  const mv = ev => { const q = stagePt(ev); ed.draft = ed.draft.pts ? { ...ed.draft, pts: [...ed.draft.pts, [q.x, q.y]] } : { ...ed.draft, x2: q.x, y2: q.y }; layoutStage(); };
+  const up = () => {
+    removeEventListener('mousemove', mv); removeEventListener('mouseup', up);
+    const d = ed.draft; ed.draft = null;
+    const b = bbox(d);
+    if (b.w < 3 && b.h < 3) { layoutStage(); return; }
+    if (d.type === 'crop') { ed.crop = { x: Math.max(0, b.x), y: Math.max(0, b.y), w: b.w, h: b.h }; toast('Cropped. Undo brings it back.'); ed.undo = [...ed.undo, ed.marks]; layoutStage(); renderTools(); return; }
+    commit([...ed.marks, d]); ed.selected = d.id; ed.tool = 'select'; layoutStage(); renderTools();
+  };
+  addEventListener('mousemove', mv); addEventListener('mouseup', up);
+});
+function openText(p) {
+  const k = ed.k, c = ed.crop || { x: 0, y: 0 };
+  const box = document.createElement('div'); box.className = 'tedit'; box.contentEditable = 'true';
+  box.style.left = (p.x - c.x) * k + 'px'; box.style.top = ((p.y - c.y) * k - 22) + 'px'; box.style.color = ed.color;
+  box._p = p; edStage.appendChild(box); box.focus();
+}
+function endText() {
+  const box = $('.tedit', edStage); if (!box) return;
+  const txt = box.innerText.trim(); const p = box._p; box.remove();
+  if (txt) { const m = { id: markSeq++, type: 'text', x1: p.x, y1: p.y, text: txt, color: ed.color, size: ed.size }; commit([...ed.marks, m]); ed.selected = m.id; ed.tool = 'select'; }
+  layoutStage(); renderTools();
+}
+function pickTool(t) {
+  endText(); ed.tool = t; ed.selected = t === 'select' ? ed.selected : null; layoutStage(); renderTools();
+  if (t === 'text') {
+    const r = edStage.getBoundingClientRect(); const over = mouseClient && mouseClient.x > r.left && mouseClient.x < r.right && mouseClient.y > r.top && mouseClient.y < r.bottom;
+    const c = ed.crop || { x: 0, y: 0, w: ed.shot.rect.w, h: ed.shot.rect.h };
+    openText(over ? stagePt({ clientX: mouseClient.x, clientY: mouseClient.y }) : { x: c.x + c.w / 4, y: c.y + c.h / 2 });
+  }
+}
+let mouseClient = null;
+addEventListener('mousemove', e => { mouseClient = { x: e.clientX, y: e.clientY }; });
+$('#tools').addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+$('#tools').addEventListener('click', e => {
+  if (!ed) return;
+  const t = e.target.closest('[data-tool]'), c = e.target.closest('[data-color]'), s = e.target.closest('[data-size]'), op = e.target.closest('[data-op]');
+  if (t) return pickTool(t.dataset.tool);
+  if (c) { ed.color = c.dataset.color; if (ed.selected != null) commit(ed.marks.map(m => m.id === ed.selected ? { ...m, color: ed.color } : m)); layoutStage(); renderTools(); return; }
+  if (s) { ed.size = +s.dataset.size; if (ed.selected != null) commit(ed.marks.map(m => m.id === ed.selected ? { ...m, size: ed.size } : m)); layoutStage(); renderTools(); return; }
+  if (!op) return;
+  ({ undo: doUndo, redo: doRedo, rotate: () => { ed.rot = (ed.rot + 90) % 360; layoutStage(); toast('Rotated (the real editor rotates the pixels)'); }, flip: () => { ed.flip = !ed.flip; layoutStage(); }, bg: () => { if (ed.inplace) return toast('Background is in the window editor'); ed.bg = !ed.bg; layoutStage(); renderTools(); }, cancel: closeEditor, done: doneEditor }[op.dataset.op])();
+});
+function doUndo() { if (!ed.undo.length) return; ed.redo = [...ed.redo, ed.marks]; const prev = ed.undo[ed.undo.length - 1]; ed.undo = ed.undo.slice(0, -1); if (prev === ed.marks) ed.crop = null; ed.marks = prev; ed.selected = null; layoutStage(); renderTools(); }
+function doRedo() { if (!ed.redo.length) return; ed.undo = [...ed.undo, ed.marks]; ed.marks = ed.redo[ed.redo.length - 1]; ed.redo = ed.redo.slice(0, -1); layoutStage(); renderTools(); }
+function closeEditor() { endTextSilently(); editor.classList.remove('on'); $('#inplaceDim').style.display = 'none'; ed = null; }
+function endTextSilently() { const b = $('.tedit', edStage); if (b) b.remove(); }
+function doneEditor() {
+  endText();
+  const shot = edShot();
+  if (ed.inplace) { addHistory({ kind: 'image', shot, text: `Screenshot ${Math.round(shot.rect.w)} × ${Math.round(shot.rect.h)}` }); closeEditor(); toast('Copied'); return; }
+  ed.card._shot = shot; paintCard(ed.card); updateHistoryShot(shot); closeEditor(); toast('Saved markup. The card and the history item are updated.');
+}
+$('#edX').addEventListener('click', closeEditor);
+$('#tools').addEventListener('dragstart', e => { if (e.target.id === 'dragme' && ed) { dragShot = edShot(); e.dataTransfer.setData('text/plain', 'navi'); } });
+
+/* ---------------- history picker ---------------- */
+const hist = $('#hist'), histQ = $('#histQ');
+let hSel = 0;
+function openHist() {
+  closePops();
+  const x = Math.min(W - 670, Math.max(10, mouse.x - 40)), y = Math.min(DESK_H - 330, Math.max(10, mouse.y - 40));
+  hist.style.left = x + 'px'; hist.style.top = y + 'px'; hist.classList.add('on');
+  histQ.value = ''; hSel = 0; renderHist(); histQ.focus();
+}
+function closeHist() { hist.classList.remove('on'); }
+const sortedHist = () => [...history].sort((a, b) => (b.pinned - a.pinned) || (b.at - a.at));
+const filtered = () => { const q = histQ.value.toLowerCase(); return sortedHist().filter(h => !q || (h.text || '').toLowerCase().includes(q)); };
+function renderHist() {
+  const rows = filtered().slice(0, 9);
+  hSel = Math.min(hSel, Math.max(0, rows.length - 1));
+  const box = $('#histRows'); box.innerHTML = '';
+  rows.forEach((h, i) => {
+    const r = document.createElement('div'); r.className = 'hrow' + (h.shot ? ' img' : '') + (i === hSel ? ' sel' : '');
+    if (h.shot) { const mini = document.createElement('div'); mini.className = 'mini'; mini.appendChild(shotView(h.shot, 64, 38)); r.appendChild(mini); }
+    r.insertAdjacentHTML('beforeend', `<span class="t">${escapeHtml((h.text || '').replace(/\n/g, ' ⏎ '))}</span>${h.tag ? `<span class="tag">${h.tag}</span>` : ''}${h.kind === 'video' ? '<span class="tag">MP4</span>' : ''}${h.pinned ? '<span class="pinmark">Pinned</span>' : ''}<span class="k">Ctrl+${i + 1}</span>`);
+    r.addEventListener('mouseenter', () => { hSel = i; renderHist(); });
+    r.addEventListener('click', () => pasteHist(h));
+    box.appendChild(r);
+  });
+  if (!rows.length) box.innerHTML = '<div class="hrow"><span class="t" style="color:#888">No matches</span></div>';
+  const p = $('#histPrev'); const h = rows[hSel];
+  p.innerHTML = '';
+  if (h) {
+    if (h.shot) p.appendChild(shotView(h.shot, 220, 130, { fitMode: 'contain' })); else p.textContent = h.text;
+    p.insertAdjacentHTML('beforeend', `<div class="meta">${h.kind === 'text' ? (h.tag === 'OCR' ? 'Capture Text' : h.tag === 'Dictation' ? 'Talk to Type' : 'Copied text') : h.kind === 'video' ? 'Recording' : 'Screenshot'} · Enter pastes · Alt+P pins · Alt+Backspace deletes</div>`);
+  }
+}
+function pasteHist(h) {
+  closeHist();
+  history = history.map(x => x.id === h.id ? { ...x, at: Date.now() } : x);
+  if (h.shot) { sendToChat(h.shot); toast('Pasted the file into Chat'); }
+  else { typeIntoNotepad(h.text); toast('Pasted into Notepad, then the old clipboard came back', 1800); }
+}
+histQ.addEventListener('input', () => { hSel = 0; renderHist(); });
+histQ.addEventListener('keydown', e => {
+  const rows = filtered().slice(0, 9);
+  if (e.key === 'ArrowDown') { hSel = Math.min(rows.length - 1, hSel + 1); renderHist(); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { hSel = Math.max(0, hSel - 1); renderHist(); e.preventDefault(); }
+  else if (e.key === 'Enter') { if (rows[hSel]) pasteHist(rows[hSel]); e.preventDefault(); }
+  else if (e.key === 'Escape') { closeHist(); e.preventDefault(); }
+  else if (e.ctrlKey && /^[1-9]$/.test(e.key)) { const h = rows[+e.key - 1]; if (h) pasteHist(h); e.preventDefault(); }
+  else if (e.altKey && e.code === 'KeyP') { const h = rows[hSel]; if (h) { history = history.map(x => x.id === h.id ? { ...x, pinned: !x.pinned } : x); renderHist(); } e.preventDefault(); }
+  else if (e.altKey && e.key === 'Backspace') { const h = rows[hSel]; if (h) { history = history.filter(x => x.id !== h.id); renderHist(); } e.preventDefault(); }
+  e.stopPropagation();
+});
+screen.addEventListener('mousedown', e => { if (hist.classList.contains('on') && !e.target.closest('#hist')) closeHist(); });
+
+/* ---------------- notepad typing ---------------- */
+const np = $('#np');
+function typeIntoNotepad(text) {
+  $$('.caret', np).forEach(c => c.remove());
+  np.appendChild(document.createTextNode(text + ' '));
+  const c = document.createElement('span'); c.className = 'caret'; np.appendChild(c);
+  np.scrollTop = np.scrollHeight;
+}
+np.appendChild(Object.assign(document.createElement('span'), { className: 'caret' }));
+
+/* ---------------- talk to type ---------------- */
+const pill = $('#pill'), bars = $('#bars'), pw = $('#pillWords');
+bars.innerHTML = '<i></i>'.repeat(22);
+const SCRIPT = [
+  ['so the windows build should match the mac app exactly same cards same editor same pill', 'So the Windows build should match the Mac app exactly: same cards, same editor, same pill.'],
+  ['um can you send me the screenshot from this morning the one with the error', 'Can you send me the screenshot from this morning, the one with the error?'],
+  ['ship the beta on friday and uh ask sam to test it on the surface', 'Ship the beta on Friday and ask Sam to test it on the Surface.'],
+];
+let dict = null, scriptIx = 0, lastTap = 0, tapTimer = null;
+function dictStart() {
+  if (!S.talk) { toast('Talk to Type is off in Settings'); return; }
+  if (dict && dict.locked) { dictFinish(); return; }
+  if (dict) return;
+  clearTimeout(tapTimer);
+  const [raw, clean] = SCRIPT[scriptIx % SCRIPT.length];
+  const doubleTap = Date.now() - lastTap < 350;
+  dict = { raw: raw.split(' '), clean, shown: 0, t0: Date.now(), locked: doubleTap || S.tapToggle, anim: null, words: null };
+  pill.className = 'on' + (dict.locked ? ' locked' : '');
+  pw.textContent = '';
+  dict.anim = setInterval(() => { $$('i', bars).forEach((b, i) => { b.style.height = (3 + Math.abs(Math.sin(Date.now() / 120 + i * .7)) * (6 + Math.random() * 10)) + 'px'; }); }, 80);
+  dict.words = setInterval(() => {
+    if (!dict) return;
+    dict.shown = Math.min(dict.raw.length, dict.shown + 1);
+    if (S.liveWords) { const line = dict.raw.slice(0, dict.shown).join(' '); pw.textContent = line.length > 26 ? '…' + line.slice(-26) : line; }
+  }, 230);
+}
+function dictRelease() {
+  if (!dict) return;
+  if (dict.locked) return;
+  const held = Date.now() - dict.t0;
+  if (held < 250) { lastTap = Date.now(); const d = dict; tapTimer = setTimeout(() => { if (dict === d) dictCancel(true); }, 360); return; }
+  dictFinish();
+}
+function dictFinish() {
+  if (!dict) return;
+  const d = dict; clearInterval(d.words); clearInterval(d.anim);
+  pill.className = 'on thinking'; $$('i', bars).forEach(b => { b.style.height = '3px'; });
+  setTimeout(() => {
+    if (dict !== d) return;
+    const text = d.shown < 3 ? d.raw.slice(0, Math.max(d.shown, 1)).join(' ') : d.clean;
+    typeIntoNotepad(text); addHistory({ kind: 'text', text, tag: 'Dictation' });
+    scriptIx += 1; dict = null; pill.className = ''; pw.textContent = '';
+  }, 260);
+}
+function dictCancel(quiet) {
+  if (!dict) return;
+  clearInterval(dict.words); clearInterval(dict.anim); dict = null; pill.className = ''; pw.textContent = '';
+  if (!quiet) toast('Cancelled. Nothing typed.');
+}
+const holdBtn = $('#holdBtn');
+holdBtn.addEventListener('pointerdown', e => { e.preventDefault(); holdBtn.classList.add('down'); dictStart(); });
+const relBtn = () => { if (holdBtn.classList.contains('down')) { holdBtn.classList.remove('down'); dictRelease(); } };
+holdBtn.addEventListener('pointerup', relBtn); holdBtn.addEventListener('pointerleave', relBtn); holdBtn.addEventListener('pointercancel', relBtn);
+
+/* ---------------- quick buttons ---------------- */
+$('#quick').innerHTML = [['area', 'Capture Area'], ['window', 'Capture Window'], ['full', 'Fullscreen'], ['aio', 'All-in-One'], ['ocr', 'Capture Text'], ['scroll', 'Scrolling'], ['rec', 'Record Screen'], ['hist', 'Open History']].map(([a, l]) => `<button data-q="${a}">${l}</button>`).join('');
+$('#quick').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) { if (location.hash && location.hash !== '#prototype') location.hash = 'prototype'; run(b.dataset.q); } });
+
+/* ---------------- keyboard ---------------- */
+let keyHeld = false;
+addEventListener('keydown', e => {
+  if ($('#tab-prototype').hidden) return;
+  if (e.code === S.talkKey) { e.preventDefault(); if (!keyHeld) { keyHeld = true; dictStart(); } return; }
+  if (e.key === 'Escape') {
+    if (dict) { dictCancel(false); return; }
+    if (ed) { if ($('.tedit', edStage)) { endText(); return; } closeEditor(); return; }
+    if (cap) { endCapture(); return; }
+    if (recHud.style.display === 'flex') { recHud.style.display = 'none'; recFrame.style.display = 'none'; return; }
+    closePops(); closeTrim(); return;
+  }
+  if (ed) {
+    if ($('.tedit', edStage)) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); endText(); } return; }
+    if (e.ctrlKey && e.code === 'KeyZ') { e.preventDefault(); e.shiftKey ? doRedo() : doUndo(); return; }
+    if (e.ctrlKey && e.code === 'KeyY') { e.preventDefault(); doRedo(); return; }
+    if ((e.key === 'Delete' || e.key === 'Backspace') && ed.selected != null) { e.preventDefault(); commit(ed.marks.filter(m => m.id !== ed.selected)); ed.selected = null; layoutStage(); return; }
+    if (e.key === 'Enter') { e.preventDefault(); doneEditor(); return; }
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) { const t = TOOLS.find(([, k]) => k === e.key.toUpperCase()); if (t) { e.preventDefault(); pickTool(t[0]); } }
+    return;
+  }
+  if (cap) {
+    if (e.code === 'Space') { e.preventDefault(); cap.window = !cap.window; ov.classList.toggle('windowMode', cap.window); ov.classList.remove('selecting'); sel.style.display = 'none'; selSize.style.display = 'none'; winHl.style.display = 'none'; modeTag.textContent = cap.window ? MODE_TAG.window() : (MODE_TAG[cap.mode] || MODE_TAG.area)(); return; }
+    if (e.key === 'Enter' && cap.aio) { e.preventDefault(); aioGo(); return; }
+    return;
+  }
+  if (hoveredCard && (e.ctrlKey || e.metaKey)) {
+    const m = { KeyC: 'copy', KeyS: 'save', KeyW: 'close', KeyE: hoveredCard._shot.kind === 'video' ? 'trim' : 'mark', KeyP: 'pin' }[e.code];
+    if (m) { e.preventDefault(); cardAct(hoveredCard, m, e.altKey); return; }
+  }
+  if (recording && $('#optKeys').checked && (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) && e.key.length === 1) {
+    const k = $('#keys'); k.textContent = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.key.toUpperCase()].filter(Boolean).join(' + '); k.style.display = 'block'; clearTimeout(k._t); k._t = setTimeout(() => { k.style.display = 'none'; }, 1200);
+  }
+  if (e.ctrlKey && e.shiftKey && !e.altKey) {
+    const m = { Digit3: 'full', Digit4: 'area', Digit5: 'aio' }[e.code];
+    if (m && S.style === 'mac') { e.preventDefault(); run(m); return; }
+  }
+  if (e.ctrlKey && e.shiftKey && e.altKey) {
+    const m = { Digit4: 'scroll', KeyT: 'ocr', Digit5: recording ? 'stop' : 'rec', KeyN: 'menu' }[e.code];
+    if (m === 'menu') { e.preventDefault(); menu.classList.add('on'); return; }
+    if (m) { e.preventDefault(); run(m); return; }
+  }
+  if (e.ctrlKey && e.code === 'Comma') { e.preventDefault(); settings.classList.add('on'); }
+});
+addEventListener('keyup', e => { if (e.code === S.talkKey && keyHeld) { e.preventDefault(); keyHeld = false; dictRelease(); } });
+addEventListener('blur', () => { if (keyHeld) { keyHeld = false; dictRelease(); } });
+
+/* ================= FEATURE MAP ================= */
+const P = { same: ['p-same', 'Same'], key: ['p-key', 'Other key'], close: ['p-close', 'Close'], gap: ['p-gap', 'Gap'], simple: ['p-simple', 'Simpler'] };
+const MAP = [
+  ['Clipboard'],
+  ['Clipboard watcher', 'NSPasteboard change count', '<code>AddClipboardFormatListener</code> (WM_CLIPBOARDUPDATE)', 'same'],
+  ['Picker at the mouse, type to filter, Return pastes', 'NSPanel, CGEvent ⌘V', 'Topmost tool window, <code>SendInput</code> Ctrl+V', 'same'],
+  ['Picker keys', '⌘1–9, ⌥P, ⌥⌫, ⌥⌘⌫', 'Ctrl+1–9, Alt+P, Alt+Backspace, Ctrl+Alt+Backspace', 'key'],
+  ['History shortcut', '⇧⌘V (changeable)', 'Win+V through a low-level hook, takes over Windows clipboard history while Navi runs (changeable)', 'key'],
+  ['Skip password manager items', 'nspasteboard.org types', '<code>ExcludeClipboardContentFromMonitorProcessing</code>, <code>CanIncludeInClipboardHistory</code> = 0', 'same'],
+  ['Shared history store', '~/Library/Application Support/Navi', '%APPDATA%\\Navi, the same history.json and files/', 'same'],
+  ['Capture'],
+  ['Area, window, fullscreen', 'ScreenCaptureKit', 'Windows.Graphics.Capture (monitor and <code>CreateForWindow</code>)', 'same'],
+  ['Overlay shows at once, frozen frames arrive after', 'SCScreenshotManager', 'Layered topmost window per display, WGC frame grab', 'same'],
+  ['Magnifier: 92 pt, 11 px, hex strip, right-drag resize and zoom, glides at edges', 'Magnifier.swift', 'Same logic in Navi.Capture.Logic, drawn in WPF', 'same'],
+  ['Window shot with nothing behind it', '<code>SCContentFilter(desktopIndependentWindow:)</code>', 'WGC <code>CreateForWindow</code>, <code>IsBorderRequired</code> = false', 'same'],
+  ['Shots leave out Navi overlays, cards, pins, pill', 'Window layer above 0', '<code>SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)</code>', 'same'],
+  ['Crosshair while Navi stays in the background', 'BackgroundCursor (SetsCursorInBackground)', 'Overlay owns the cursor with <code>WS_EX_NOACTIVATE</code>', 'simple'],
+  ['Borrow the system screenshot keys, give them back on quit', 'symbolichotkeys 28–31, 184', '<code>PrintScreenKeyForSnippingEnabled</code> = 0 and a hook for Win+Shift+S; restored on quit and by a watchdog', 'key'],
+  ['Corner card: hover blur, Copy and Save, four corners', 'NSPanel and visual effect view', 'Topmost WPF window with Acrylic backdrop', 'same'],
+  ['Card keys only while hovered', 'Carbon hot keys during hover', '<code>RegisterHotKey</code> during hover: Ctrl+C, S, W, E, P', 'key'],
+  ['Drag a card into any app', 'File URL drag', '<code>DoDragDrop</code> with a file drop list (CF_HDROP), keeps the Navi … .png name', 'same'],
+  ['Save folder', 'macOS screenshot folder', 'Pictures\\Screenshots (known folder), override in Settings', 'same'],
+  ['Show in Finder', 'NSWorkspace', '<code>explorer.exe /select,</code> named "Show in Explorer"', 'same'],
+  ['Cards stay on the capture display, mixed scale displays', 'NSScreen', 'Per-Monitor V2 DPI', 'same'],
+  ['Hide desktop icons in shots', 'Leave Finder desktop windows out of the filter', 'Hide the real desktop icons for about 150 ms while the frame is grabbed', 'close'],
+  ['Every shot copied, each capture its own history item', 'CaptureSettings', 'Same settings and keys', 'same'],
+  ['Markup'],
+  ['All 14 tools with their keys, select, move, resize, delete', 'SwiftUI canvas (AnnotateCanvas)', 'WPF canvas, marks model in Navi.Capture.Logic', 'same'],
+  ['Color picker and screen color sampler, three line sizes', 'NSColorSampler', 'Navi\'s own sampler loupe (the magnifier)', 'same'],
+  ['Undo, redo, delete through local keys', '⌘Z, ⇧⌘Z, Delete', 'Ctrl+Z, Ctrl+Shift+Z (Ctrl+Y too), Delete', 'key'],
+  ['Rotate, flip, resize, crop, drop an image in to combine', 'Annotate/', 'Same', 'same'],
+  ['Small picture to drag out (top right)', 'NSDraggingSource', '<code>DoDragDrop</code>', 'same'],
+  ['Editable marks in <code>&lt;id&gt;.navi</code>', 'JSON and base PNG', 'The same format, so a .navi file opens on both', 'same'],
+  ['Edit after capture, in place', 'InPlaceAnnotator', 'Same, on the frozen overlay', 'same'],
+  ['Extras'],
+  ['Pin to screen: move, scroll to resize, opacity, lock so clicks go through', 'NSPanel ignoresMouseEvents', 'Topmost window, <code>WS_EX_TRANSPARENT</code> when locked', 'same'],
+  ['Capture Text (OCR)', 'Vision VNRecognizeTextRequest', '<code>Windows.Media.Ocr</code>. Weaker on tiny text, see D7', 'close'],
+  ['QR codes', 'Vision barcodes', 'ZXing.Net', 'same'],
+  ['Self-timer, all-in-one bar, card quick actions', 'Extras/', 'Same', 'same'],
+  ['Scrolling capture, vertical and horizontal, Auto-scroll', 'Vision registration, CGEvent scroll', 'OpenCV phase correlation, <code>SendInput</code> wheel', 'same'],
+  ['Background tool: gradients, picture, padding, corners, shadow, ratio, presets', 'Background/', 'Same', 'same'],
+  ['Talk to type'],
+  ['Hold to talk', 'Hold fn', 'Hold Right Alt (Right Ctrl on AltGr layouts), menu mask key stops the Alt menu', 'key'],
+  ['Double-tap to lock, "Tap to Start and Stop"', 'FnGesture', 'Same state machine, ported with its tests', 'same'],
+  ['Key combos never dictate', 'fn+⌫, fn+arrows', 'Alt+Tab, Alt+F4, AltGr+key', 'same'],
+  ['Pill with waveform and live words', 'DictationPill, LiveText', 'Same layout and timing', 'same'],
+  ['On-device speech', 'Parakeet TDT v3 through FluidAudio (Core ML)', 'Parakeet TDT v3 through sherpa-onnx (ONNX Runtime, CPU or DirectML), same model, same download size', 'same'],
+  ['Speech before the model is loaded', 'SpeechAnalyzer or SFSpeechRecognizer', 'No good built-in fallback; the pill shows the download', 'gap'],
+  ['Cleanup pass', 'Foundation Models, or rules', 'Rules by default; optional local model download, see D5', 'gap'],
+  ['Mic off between dictations, or Keep Microphone Ready', 'AVAudioEngine, 450 ms pre-roll', 'WASAPI shared mode, same pre-roll; Windows shows its mic icon like the macOS dot', 'same'],
+  ['ReleaseTail, Esc cancels, paste and restore clipboard', 'ReleaseTail.swift', 'Same logic and tests, <code>SendInput</code> paste', 'same'],
+  ['Borrow the fn key setting', 'AppleFnUsageType', 'Nothing to borrow', 'simple'],
+  ['Dictation benchmark', 'swift run dictation-bench', '<code>dotnet run --project Bench</code> on the same cases', 'same'],
+  ['Recording'],
+  ['Record area, window, fullscreen to MP4', 'SCStream, AVAssetWriter', 'WGC and Media Foundation (hardware H.264, AAC)', 'same'],
+  ['Mic and computer audio mixed', 'ScreenCaptureKit audio', 'WASAPI mic plus loopback, mixed', 'same'],
+  ['Camera bubble, click and key overlays', 'AVCaptureSession, CGEventTap', '<code>MediaCapture</code>, low-level mouse and keyboard hooks', 'same'],
+  ['Red stop item', 'Menu bar', 'Red item in the tray with the timer', 'same'],
+  ['Leave notifications out of the video', 'Leave Notification Center windows out of the filter', 'No public way; turn on Do Not Disturb if a spike finds a safe API, see D6', 'gap'],
+  ['Hide desktop icons while recording', 'Filter', 'Real icons hidden for the recording, back after', 'close'],
+  ['GIF, trim, MP4/GIF switch on the card', 'ImageIO or gifski, AVPlayerView', 'gifski DLL, Media Foundation', 'same'],
+  ['App'],
+  ['Menu bar icon and the Navi menu', 'NSStatusItem', 'Tray icon (<code>Shell_NotifyIcon</code>) with the same menu, opens upward', 'same'],
+  ['Menu at the mouse', '⌥⇧⌘N', 'Ctrl+Alt+Shift+N', 'key'],
+  ['Settings panel', 'SettingsPanel, own switches', 'Same panel and switches, pops above the tray', 'same'],
+  ['Permissions', 'Screen Recording, Accessibility, Mic, Camera', 'Only Mic and Camera (Windows privacy settings)', 'simple'],
+  ['Updates', 'Sparkle, appcast.xml', 'Velopack, releases feed on GitHub', 'same'],
+  ['Signing', 'Developer ID, notarized', 'Azure Trusted Signing (Authenticode)', 'same'],
+  ['Dev build', 'Navi Dev, scripts/dev.sh', 'Navi Dev, <code>windows/scripts/dev.ps1</code>', 'same'],
+];
+(function renderMap() {
+  const counts = {};
+  $('#mapBody').innerHTML = MAP.map(r => {
+    if (r.length === 1) return `<tr class="group"><td colspan="4">${r[0]}</td></tr>`;
+    counts[r[3]] = (counts[r[3]] || 0) + 1;
+    const [cls, lbl] = P[r[3]];
+    return `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td><span class="pill ${cls}">${lbl}</span></td></tr>`;
+  }).join('');
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  $('#counts').innerHTML = [['Features', total], ['Same', counts.same || 0], ['Other key', counts.key || 0], ['Simpler', counts.simple || 0], ['Close', counts.close || 0], ['Gap', counts.gap || 0]].map(([l, n]) => `<div><b>${n}</b>${l}</div>`).join('');
+})();
+
+/* ================= KEYS ================= */
+const KEYROWS = [
+  ['Capture Area', '⇧⌘4', 'Win+Shift+S', 'Ctrl+Shift+4', 'Mac-style clashes with Excel currency format'],
+  ['Capture Window', '⇧⌘4, then Space', 'Win+Shift+S, then Space', 'Ctrl+Shift+4, then Space', ''],
+  ['Capture Fullscreen', '⇧⌘3', 'PrtSc', 'Ctrl+Shift+3', 'Mac-style clashes with Excel date format'],
+  ['Same shots, copied too', '⌃⇧⌘3, ⌃⇧⌘4', 'none', 'none', 'Dropped: every shot is copied already (Copy Screenshots to Clipboard)'],
+  ['All-in-One bar', '⇧⌘5', 'Ctrl+PrtSc', 'Ctrl+Shift+5', 'Mac-style clashes with Excel percent and VS Code split terminal'],
+  ['Scrolling Capture', '⌥⇧⌘4', 'Ctrl+Alt+Shift+4', 'Ctrl+Alt+Shift+4', 'Ctrl+Alt is AltGr on some layouts; free on US'],
+  ['Capture Text', '⌥⇧⌘T', 'Ctrl+Alt+Shift+T', 'Ctrl+Alt+Shift+T', ''],
+  ['Record (press again to stop)', '⌥⇧⌘5', 'Ctrl+Alt+Shift+5', 'Ctrl+Alt+Shift+5', ''],
+  ['Open History', '⇧⌘V', 'Win+V', 'Win+V', 'Ctrl+Shift+V is paste as plain text in Chrome, Edge, Slack, Word, VS Code; allowed but not the default'],
+  ['Navi menu at the mouse', '⌥⇧⌘N', 'Ctrl+Alt+Shift+N', 'Ctrl+Alt+Shift+N', ''],
+  ['Settings', '⌘,', 'Ctrl+,', 'Ctrl+,', 'Only while the menu is open'],
+  ['Talk to type', 'Hold fn', 'Hold Right Alt', 'Hold Right Alt', 'Right Ctrl on AltGr layouts (German, French, Polish…)'],
+  ['Card: copy, save, close, markup, pin', '⌘C ⌘S ⌘W ⌘E ⌘P on hover', 'Ctrl+C S W E P on hover', 'same', 'Only while the mouse is on the card, so other apps keep them'],
+  ['Card copy and keep open', '⌥ + Copy', 'Alt + Copy', 'same', ''],
+  ['Markup undo, redo', '⌘Z, ⇧⌘Z', 'Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y', 'same', ''],
+  ['Markup tools', 'V A R F O L P H T N B X S C', 'same letters', 'same', ''],
+  ['History picker', '⌘1–9, ⌥P, ⌥⌫, ⌥⌘⌫', 'Ctrl+1–9, Alt+P, Alt+Backspace, Ctrl+Alt+Backspace', 'same', ''],
+];
+const kb = s => s.split(/(\s*,\s*then\s*|,\s*|\s+)/).map(x => /^[\s,]|then/.test(x) || !x.trim() ? x : x.split('+').map(k => `<kbd>${k}</kbd>`).join('+')).join('');
+$('#keyBody').innerHTML = KEYROWS.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2] === 'none' || r[2].includes('same') ? r[2] : kb(r[2])}</td><td>${r[3] === 'none' || r[3] === 'same' ? r[3] : kb(r[3])}</td><td style="color:var(--dim)">${r[4]}</td></tr>`).join('');
+
+/* ================= PLAN STEPS ================= */
+const STEPS = [
+  ['W0', 'Base', 1.5, ['Solution, projects, CI on windows-latest, the Parallels VM and SSH test loop', 'Navi.Core: Inbox and history.json, the same format as NaviCore (fixture files from the Mac build open the same)', 'Tray icon, Navi menu, Settings panel with the same look, Start with Windows', 'Navi Dev and Navi as two apps, signed'], 'the tray icon opens the menu and settings, toggles are kept, and Core tests pass on the Mac and in CI.'],
+  ['W1', 'Clipboard', 1.5, ['Watcher, picker at the mouse, type to filter, paste, the picker keys', 'Win+V takeover and give back', 'Skip password manager items'], 'Win+V opens Navi\'s picker, Enter pastes into Notepad, Word, and Chrome, and Windows gets Win+V back on quit.'],
+  ['W2', 'Capture core and corner card', 3, ['Overlay, crosshair, magnifier, freeze, Space for window, Esc', 'Area, window (nothing behind), fullscreen with WGC', 'Corner card with every button, hover keys, drag, Save, Show in Explorer', 'Borrow PrtSc and Win+Shift+S, give them back', 'Two displays at 100% and 150%'], 'every capture matches the Mac build side by side on two displays with different scales, and Navi\'s own windows never show in a shot.'],
+  ['W3', 'Markup editor', 4, ['All 14 tools, select and resize, colors, sampler, sizes, undo and redo', 'Rotate, flip, resize, crop, combine, drag-out picture', '.navi files, Done updates card and history', 'Edit after capture in place', 'Snapshot tests against the Mac EditorSnapshot PNGs'], 'a .navi file made on the Mac opens and edits on Windows, and the editor snapshots match.'],
+  ['W4', 'Extras, scrolling, background', 3, ['Pin with lock, OCR and QR, self-timer, all-in-one bar, quick actions', 'Scrolling capture with Auto-scroll', 'Background tool with presets'], 'the stitch fixtures from NaviCapture pass, and pins stay click-through when locked.'],
+  ['W5', 'Talk to type', 3, ['Right Alt hook with the menu mask key, AltGr check, gestures ported with tests', 'Mic, pre-roll, ReleaseTail, Esc', 'Parakeet through sherpa-onnx, model download', 'Pill and live words, rules cleanup, paste and restore', 'Bench runs the same cases'], 'the benchmark scores within 1% of the Mac build, and release to text is under 400 ms on a mid laptop.'],
+  ['W6', 'Recording', 3, ['WGC and Media Foundation to MP4, mic and loopback mixed', 'Record bar, camera bubble, click and key overlays, red tray item', 'GIF, trim, MP4/GIF switch'], 'a 60 s 1080p recording has audio in sync and plays in the Photos app, Chrome, and Slack.'],
+  ['W7', 'Ship', 1.5, ['Velopack installer and updates, signing, first-run screens', 'Release script next to scripts/release.sh'], 'a clean Windows 11 PC installs from GitHub with no SmartScreen block and updates itself.'],
+];
+$('#steps').innerHTML = STEPS.map(([id, name, wk, items, done]) => `<div class="stepcard"><h3><span class="pill ph">${id}</span>${name}<span class="wk">${wk} weeks</span></h3><ul>${items.map(i => `<li>${i}</li>`).join('')}</ul><p class="doneWhen"><b>Done when:</b> ${done}</p></div>`).join('')
+  + `<p class="doneWhen">Total: <b>${STEPS.reduce((a, s) => a + s[2], 0)} weeks</b>, about 5 months.</p>`;
+
+/* ================= DECISIONS ================= */
+const DEC = [
+  ['D1', 'Stack', 'C# on .NET 10 with WPF, in this repo under windows/.', 'Rust with windows-rs (slower to build and test), or WinUI 3 (weaker for overlay windows).'],
+  ['D2', 'Talk key', 'Hold Right Alt. Right Ctrl on AltGr layouts. Changeable in Settings.', 'Ctrl+Win like Wispr Flow on Windows, or CapsLock.'],
+  ['D3', 'Default shortcut style', 'Windows keys (PrtSc, Win+Shift+S, Ctrl+PrtSc, Win+V), with Mac-style (Ctrl+Shift+3/4/5) one click away in Settings.', 'Mac-style as the default. Clashes with Excel and VS Code for people who use them.'],
+  ['D4', 'Look', 'Pixel copy of every Navi surface: same layout, sizes, colors, radii, timings, and words. Windows title bars on Navi\'s windows. Segoe UI Variable as the font, because it is the Windows system font the way SF is on the Mac.', 'Ship Inter on both apps so the letters match too.'],
+  ['D5', 'Cleanup pass', 'Rules by default. "Better Cleanup" in Settings downloads a small local model (about 1 GB, llama.cpp). Uses Phi Silica instead on Copilot+ PCs.', 'Rules only, or always download the model.'],
+  ['D6', 'Notifications in recordings', 'Spend one day on a spike for a safe Do Not Disturb switch. If there is none, leave the option out on Windows rather than ship a hack.', 'Undocumented settings (WNF), which can break with any Windows update.'],
+  ['D7', 'OCR engine', 'Windows.Media.Ocr first. Add PaddleOCR (ONNX) only if it misses small text in tests.', 'PaddleOCR from the start (about 15 MB more).'],
+  ['D8', 'Hide desktop icons', 'Hide the real icons for about 150 ms while a shot is taken, and for the whole recording.', 'Leave the option out on Windows.'],
+  ['D9', 'Windows versions', 'Windows 11 22H2 and later, x64 and ARM64.', 'Also Windows 10: window shots would show a yellow border and panels lose Acrylic.'],
+  ['D10', 'Test machine', 'Parallels with Windows 11 ARM on this Mac, so the agent can test the UI itself.', 'A spare Windows PC with SSH, or CI only (slow, no hands-on UI checks).'],
+];
+$('#decisions').innerHTML = DEC.map(([id, t, rec, alt]) => `<div class="decision"><div class="id">${id}</div><h3>${t}</h3><div class="rec"><b>Recommended:</b> ${rec}</div><div class="alt">Other choice: ${alt}</div></div>`).join('');
+
+/* ---------------- start ---------------- */
+showTab(location.hash.slice(1));
+fit();
+})();
+</script>

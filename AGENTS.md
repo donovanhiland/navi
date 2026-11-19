@@ -1,6 +1,7 @@
 # Navi
 
-A macOS menu bar app for capture. It combines four tools:
+A macOS menu bar app for capture, with a Windows version being built (see
+[Windows](#windows)). It combines four tools:
 
 | Feature | Model app | Status |
 |---|---|---|
@@ -396,6 +397,9 @@ Xnapper's backgrounds, and macshot's auto-redact.
 | `Packages/NaviRecording` | Screen recording engine, record bar, camera bubble, overlays, GIF, trim |
 | `Packages/NaviDictation` | Talk to type: Talk Key (fn by default), speech, cleanup, pill, paste |
 | `Packages/NaviCapture` | Selection overlay and all-in-one bar, ScreenCaptureKit capture, corner cards, `Annotate/`, `Extras/` (pin, OCR, toast), `Scroll/`, `Background/` |
+| `windows/` | The Windows app: `Navi.slnx`, `Navi.Core`, `App`, `tests/` |
+| `shared-fixtures/` | Files both apps' tests read, such as history files each app wrote |
+| `docs/windows-plan.html` | Windows prototype, feature map, keys, plan, decisions |
 | `docs/capture-plan.html` | Prototype, feature map, and plan |
 | `docs/upstream-hex.md` | Hex as the upstream for talk to type: feature map, sync steps |
 | `Packages/NaviDictation/Bench` | Dictation benchmark cases and saved results |
@@ -437,6 +441,9 @@ swift scripts/comments.swift [--fix]  # fails on any comment in Swift code; --fi
 scripts/tests/run.sh    # release script tests (plan, notes HTML, Sparkle signature checker, PR title)
 scripts/pr-title-check.sh "fix(capture): …"  # checks a PR title the way CI does
 MODE=dry-run VERSION=9.9.9 BUILD=1 NOTES=x SKIP_TESTS=1 scripts/ci-release.sh  # release without Apple keys; nothing published
+cd windows && dotnet test Navi.slnx     # Windows build: Core tests, run on this Mac (.NET 10 SDK in ~/.dotnet)
+cd windows && dotnet build App/App.csproj  # builds the WPF app on the Mac; it runs only on Windows
+windows/scripts/dev.ps1 [fresh|stop]    # on Windows: build and run Navi Dev
 scripts/dev.sh          # build and run Navi Dev in place of Navi (fresh: wipe it first; stop: back to Navi)
 swiftc -O -swift-version 5 scripts/frame-probe.swift -o /tmp/frame-probe && /tmp/frame-probe --runs 3  # records the screen at 120 fps, presses ⇧⌘4, saves every changed frame as /tmp/navi-frames/runN/<ms since key>.png (needs an unlocked screen and a non-sandboxed shell)
 ```
@@ -535,6 +542,54 @@ macOS ties permissions to the signature, so the two apps get separate
 permissions. Donovan's own copy is the release in `/Applications`. `App/Navi.entitlements` (generated from `project.yml`) holds the
 microphone and camera entitlements that the hardened runtime needs. Keep a stable signature so macOS keeps the Accessibility and
 Screen Recording permissions between builds.
+
+## Windows
+
+A second native app with the same features, look, and behavior, under `windows/`.
+`docs/windows-plan.html` is the source of truth: a clickable Windows prototype, the
+feature map (Mac way and Windows way for every feature), the key map, steps W0 to W7,
+and decisions D1 to D10. All ten recommendations were approved on 2026-11-16.
+
+Status: **W0 in progress.** `Navi.Core` (history, settings, key map, menu model) is
+built and tested. The tray app (`windows/App`) runs on a GitHub Windows runner: the
+`Ctrl+Alt+Shift+N` menu, Settings, and its toggles work there. No Windows test machine
+is set up yet.
+
+- **Stack (D1):** C# on .NET 10 with WPF, UI written in code (no XAML), Win32 through
+  `LibraryImport` for now. Windows 11 22H2 and later, x64 and ARM64 (D9).
+- **Same files as the Mac:** `Navi.Core` reads and writes the Mac `history.json` format
+  (dates are seconds since 2001-01-01, IDs are uppercase UUIDs, missing optional fields
+  are left out). `shared-fixtures/history/` holds a file in the Mac format and the same
+  items as the Windows app writes them. Both test suites read both files
+  (`SharedFixtureTests` on the Mac, `HistoryFormatTests` on Windows), so a format change
+  on either side must keep both passing. A new `CaptureKind` must be added on both
+  sides. History lives in `%APPDATA%\Navi` (`Navi Dev` for Debug builds), with
+  `settings.json` beside it.
+- **Look (D4):** every Navi surface copies the Mac one (sizes, colors, radii, timings,
+  words). Navi's windows get Windows title bars. The font is Segoe UI Variable.
+  Shared values are in `windows/App/NaviTheme.cs`.
+- **Menu:** the tray icon opens the Navi menu, in the Mac order (`NaviMenuModel`,
+  tested against it), above the tray. Settings pops up in the same place. Items not
+  built yet on Windows show dimmed.
+- **Keys (D3):** Shortcut Style in Settings. Windows keys by default: `Win+Shift+S`
+  area (Space for window), `PrtSc` fullscreen, `Ctrl+PrtSc` all-in-one, `Win+V`
+  history. Mac-style: `Ctrl+Shift+3/4/5`. Both: `Ctrl+Alt+Shift+4/T/5` for scrolling,
+  text, record, and `Ctrl+Alt+Shift+N` for the menu at the mouse. The table is
+  `KeyMap` in `Navi.Core`.
+- **Talk to type (D2):** hold Right Alt (Right Ctrl on AltGr layouts), with a menu
+  mask key so the Alt menu never opens. Cleanup uses rules, plus an optional
+  download of a small local model (D5).
+- **Gaps:** notifications in recordings need a spike first (D6); hide desktop icons
+  hides the real icons for about 150 ms (D8); OCR starts with `Windows.Media.Ocr` (D7).
+- **Testing (D10):** `Navi.Core` and future `*.Logic` projects target plain `net10.0`
+  and run on this Mac. The UI needs a Windows 11 ARM VM in Parallels (not installed
+  yet) reached over SSH. CI: `.github/workflows/windows.yml` on `windows-latest`.
+- **Screenshots and video without a VM:** `.github/workflows/windows-media.yml` builds
+  Release on `windows-latest` and runs `windows/scripts/capture-media.ps1`. The script
+  drives the real app with real key presses and clicks (rows found through UI
+  Automation), saves PNGs, and records the screen with ffmpeg. The run's
+  `windows-media` artifact holds them. Run it from the Actions tab, or push to a
+  `media/**` branch.
 
 ## Rules
 

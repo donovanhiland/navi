@@ -1,0 +1,41 @@
+name: Windows media
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["media/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  media:
+    name: Run the Windows app and record it
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: windows
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: windows/global.json
+      - run: dotnet build App/App.csproj -c Release
+      - name: Install ffmpeg
+        run: if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { choco install ffmpeg -y --no-progress }
+        shell: powershell
+      - name: Drive the app
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + $env:Path
+          ./scripts/capture-media.ps1 -Out "$env:GITHUB_WORKSPACE/media"
+        shell: powershell
+      - name: Error log
+        if: always()
+        run: Get-ChildItem -Recurse "$env:APPDATA/Navi" -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName; if ($_.Extension -eq '.log') { Get-Content $_.FullName } }
+        shell: powershell
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-media
+          path: media

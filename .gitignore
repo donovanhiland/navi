@@ -11,3 +11,7 @@ xcuserdata/
 dist/
 iOS/App/Info.plist
 iOS/Keyboard/Info.plist
+windows/**/bin/
+windows/**/obj/
+windows/artifacts/
+*.user

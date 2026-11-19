@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/tests/">
+    <Project Path="tests/Navi.Core.Tests/Navi.Core.Tests.csproj" />
+  </Folder>
+  <Project Path="App/App.csproj" />
+  <Project Path="Navi.Core/Navi.Core.csproj" />
+</Solution>

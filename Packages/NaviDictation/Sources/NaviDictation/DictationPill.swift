@@ -10,71 +10,96 @@ final class PillModel {
         case thinking
     }
 
-    static let barCount = 22
-
     var phase: Phase = .listening
     var isLocked = false
     var liveText = ""
-    var levels: [Float] = Array(repeating: 0, count: PillModel.barCount)
+    var showsWords = true
+    var glowStyle = PillGlowStyle.standard
+    private var smoother = BandSmoother()
+    var bands: [Float] { smoother.values }
 
-    func push(level: Float) {
-        levels.removeFirst()
-        levels.append(level)
+    func push(bands: [Float]) {
+        smoother.push(bands)
     }
 
     func reset() {
         phase = .listening
         isLocked = false
         liveText = ""
-        levels = Array(repeating: 0, count: Self.barCount)
+        smoother.reset()
     }
 }
 
 struct PillView: View {
-    static let panelSize = NSSize(width: 240, height: 80)
+    static let pillWidth: CGFloat = 240
+    static let compactHeight: CGFloat = 34
+    static let expandedHeight: CGFloat = 56
+    static let wordsRowHeight: CGFloat = 26
+    static let glowStripHeight: CGFloat = 30
+    static let horizontalPadding: CGFloat = 16
+    static let panelSize = NSSize(width: 264, height: 96)
     static let bottomInset: CGFloat = 13
-    static let spacing: CGFloat = 8
     let model: PillModel
+    var time: Double?
 
-    private var showsWords: Bool { model.phase == .listening && !model.liveText.isEmpty }
+    private var isExpanded: Bool { model.showsWords || !model.liveText.isEmpty }
 
     var body: some View {
-        VStack(spacing: 4) {
-            if showsWords {
-                LiveTextLine(text: model.liveText, width: rowWidth)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+        let height = isExpanded ? Self.expandedHeight : Self.compactHeight
+        let radius = isExpanded ? 20.0 : Self.compactHeight / 2
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        ZStack(alignment: .top) {
+            shape.fill(.black.opacity(0.88))
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                PillGlowView(
+                    bands: model.bands, style: model.glowStyle,
+                    isThinking: model.phase == .thinking, time: time
+                )
+                .frame(height: isExpanded ? Self.glowStripHeight : Self.compactHeight)
             }
-            HStack(spacing: Self.spacing) {
-                switch model.phase {
-                case .listening:
-                    Waveform(levels: model.levels, compact: showsWords)
-                case .thinking:
-                    ProgressView()
-                        .controlSize(.small)
-                        .colorScheme(.dark)
-                    Text("Thinking…")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.85))
-                }
-            }
+            row
+                .frame(height: isExpanded ? Self.wordsRowHeight : Self.compactHeight)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, showsWords ? 7 : 6)
-        .frame(minHeight: 34)
-        .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(.black.opacity(0.88)))
-        .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        .frame(width: Self.pillWidth, height: height)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
         .shadow(color: .black.opacity(0.3), radius: 6, y: 2)
-        .animation(.easeOut(duration: 0.18), value: showsWords)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: isExpanded)
         .padding(.bottom, Self.bottomInset)
         .frame(width: Self.panelSize.width, height: Self.panelSize.height, alignment: .bottom)
     }
 
-    private var rowWidth: CGFloat { Waveform.width }
+    @ViewBuilder private var row: some View {
+        Group {
+            if model.phase == .thinking {
+                PlaceholderLine(text: "Thinking…")
+            } else if isExpanded {
+                if model.liveText.isEmpty {
+                    PlaceholderLine(text: "Listening…")
+                } else {
+                    LiveTextLine(text: model.liveText)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Self.horizontalPadding)
+    }
+}
+
+private struct PlaceholderLine: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(.white.opacity(0.5))
+            .lineLimit(1)
+    }
 }
 
 private struct LiveTextLine: View {
     let text: String
-    let width: CGFloat
 
     var body: some View {
         Text(text)
@@ -82,34 +107,6 @@ private struct LiveTextLine: View {
             .foregroundStyle(.white.opacity(0.92))
             .lineLimit(1)
             .truncationMode(.head)
-            .frame(width: width, alignment: .center)
-    }
-}
-
-private struct Waveform: View {
-    static let barWidth: CGFloat = 3
-    static let barSpacing: CGFloat = 2
-    static let width = CGFloat(PillModel.barCount) * barWidth + CGFloat(PillModel.barCount - 1) * barSpacing
-    static let compactBarCount = 12
-    static let compactBarWidth: CGFloat = 2
-    static let compactHeight: CGFloat = 8
-    let levels: [Float]
-    let compact: Bool
-
-    var body: some View {
-        let shown = compact ? Array(levels.suffix(Self.compactBarCount)) : levels
-        let height = compact ? Self.compactHeight : 22
-        let barWidth = compact ? Self.compactBarWidth : Self.barWidth
-        HStack(spacing: Self.barSpacing) {
-            ForEach(Array(shown.enumerated()), id: \.offset) { _, level in
-                Capsule()
-                    .fill(.white.opacity(compact ? 0.7 : 1))
-                    .frame(width: barWidth, height: 2 + CGFloat(level) * (height - 2))
-            }
-        }
-        .frame(height: height)
-        .animation(.linear(duration: 0.05), value: levels)
-        .accessibilityHidden(true)
     }
 }
 

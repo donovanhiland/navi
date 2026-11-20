@@ -13,6 +13,20 @@ final class SettingsModel {
         var isEnabled: @MainActor () -> Bool = { true }
     }
 
+    struct Choice: Identifiable {
+        struct Option: Identifiable {
+            let id: String
+            let title: String
+        }
+
+        let id: String
+        let title: String
+        let options: [Option]
+        let get: @MainActor () -> String
+        let set: @MainActor (String) -> Void
+        var isEnabled: @MainActor () -> Bool = { true }
+    }
+
     struct Permission: Identifiable {
         let id: String
         let title: String
@@ -22,6 +36,7 @@ final class SettingsModel {
 
     var capture: [Toggle] = []
     var talkToType: [Toggle] = []
+    var talkToTypeChoices: [Choice] = []
     var vocabulary: VocabularyStore?
     var permissions: [Permission] = []
     var talkKey: @MainActor () -> String = { "" }
@@ -44,6 +59,18 @@ final class SettingsModel {
     func isEnabled(_ toggle: Toggle) -> Bool {
         _ = revision
         return toggle.isEnabled()
+    }
+
+    func binding(_ choice: Choice) -> Binding<String> {
+        Binding(
+            get: { [self] in _ = revision; return choice.get() },
+            set: { [self] value in choice.set(value); refresh() }
+        )
+    }
+
+    func isEnabled(_ choice: Choice) -> Bool {
+        _ = revision
+        return choice.isEnabled()
     }
 
     func isGranted(_ permission: Permission) -> Bool {
@@ -77,6 +104,7 @@ struct SettingsView: View {
             section("Talk to Type") {
                 talkKeyRow
                 toggles(model.talkToType)
+                choices(model.talkToTypeChoices)
             }
             separator
             if let vocabulary = model.vocabulary {
@@ -116,6 +144,12 @@ struct SettingsView: View {
     @ViewBuilder private func toggles(_ toggles: [SettingsModel.Toggle]) -> some View {
         ForEach(toggles) { toggle in
             ToggleRow(toggle: toggle, isOn: model.binding(toggle), isEnabled: model.isEnabled(toggle))
+        }
+    }
+
+    @ViewBuilder private func choices(_ choices: [SettingsModel.Choice]) -> some View {
+        ForEach(choices) { choice in
+            ChoiceRow(choice: choice, selection: model.binding(choice), isEnabled: model.isEnabled(choice))
         }
     }
 
@@ -251,6 +285,31 @@ private struct ToggleRow: View {
         .accessibilityValue(isOn.wrappedValue ? "On" : "Off")
         .accessibilityAddTraits(.isToggle)
         .accessibilityAction { if isEnabled { isOn.wrappedValue.toggle() } }
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.4)
+        .animation(SettingsMetrics.stateAnimation, value: isEnabled)
+    }
+}
+
+private struct ChoiceRow: View {
+    let choice: SettingsModel.Choice
+    let selection: Binding<String>
+    let isEnabled: Bool
+
+    var body: some View {
+        MenuRow(isEnabled: isEnabled) {
+            Text(choice.title)
+            Spacer(minLength: 12)
+            Picker(choice.title, selection: selection) {
+                ForEach(choice.options) { option in
+                    Text(option.title).tag(option.id)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.mini)
+            .fixedSize()
+        }
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.4)
         .animation(SettingsMetrics.stateAnimation, value: isEnabled)

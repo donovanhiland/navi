@@ -82,8 +82,15 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   from 67% to 83%.
 - `Packages/NaviDictation`: hold fn to talk, double-tap fn to lock ("Tap fn
   to Start and Stop" in Settings, off by default: one tap locks, the next press
-  types), pill with a waveform and live text ("Show Words While Talking", on by
-  default: one line of words above shorter bars, no wider than the bars, the
+  types), a 240 pt pill with an audio-reactive dot glow and live text (the
+  microphone's sound is split into 32 pitch bands with an FFT; dots rise from the
+  bottom edge, low pitches in the middle, fast rise and slow fall; "Pill Look" in
+  Settings picks Dot Matrix (default), Dot Matrix Accent, Embers (sparks drift up
+  off loud sounds), or Embers Accent; Thinking shows a dot shimmer sweeping across;
+  no lock icon. "Show Words While Talking",
+  on by default: the pill opens at 56 pt with a words row on top ("Listening…"
+  until words come, so nothing moves when they do) and the dots in the strip
+  below; off, it stays 34 pt with dots only. The
   newest words stay in view and the oldest are cut with "…"; Parakeet reads the newest 10 s again every 0.6 s for it,
   Apple speech uses its partial results; only shown, the typed text still comes
   from the sentence passes and the final pass), on-device speech (Parakeet TDT v3 through FluidAudio, from Hex;

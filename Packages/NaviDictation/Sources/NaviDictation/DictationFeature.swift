@@ -9,6 +9,7 @@ public final class DictationFeature {
     private static let keepReadyKey = "dictation.keepMicrophoneReady"
     private static let tapTogglesKey = "dictation.tapToToggle"
     private static let liveTextKey = "dictation.liveText"
+    private static let pillGlowKey = "dictation.pillGlow"
     private static let learnWordsKey = "dictation.learnWords"
     private static let learnDelay: Duration = .seconds(5)
     nonisolated private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Dictation")
@@ -82,6 +83,11 @@ public final class DictationFeature {
     public var showsLiveText: Bool {
         get { UserDefaults.standard.object(forKey: Self.liveTextKey) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Self.liveTextKey) }
+    }
+
+    public var pillGlow: PillGlowStyle {
+        get { UserDefaults.standard.string(forKey: Self.pillGlowKey).flatMap(PillGlowStyle.init(rawValue:)) ?? .standard }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Self.pillGlowKey) }
     }
 
     public var learnsWords: Bool {
@@ -241,6 +247,8 @@ public final class DictationFeature {
             return
         }
 
+        pill.model.glowStyle = pillGlow
+        pill.model.showsWords = showsLiveText
         pill.show()
         startLevelTimer()
         TextCleaner.prewarm()
@@ -378,8 +386,8 @@ public final class DictationFeature {
         levelTimer?.invalidate()
         let microphone = microphone
         levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            let level = microphone.level
-            MainActor.assumeIsolated { self?.pill.model.push(level: level) }
+            let bands = microphone.bands
+            MainActor.assumeIsolated { self?.pill.model.push(bands: bands) }
         }
     }
     private func askForPermissions() {

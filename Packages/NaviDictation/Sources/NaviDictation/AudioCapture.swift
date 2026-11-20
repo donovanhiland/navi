@@ -61,11 +61,13 @@ final class Microphone: @unchecked Sendable {
         var sink: AsyncStream<AudioChunk>.Continuation?
         var preRoll = PreRollBuffer<AVAudioPCMBuffer>(capacity: 0)
         var level: Float = 0
+        var bands: [Float] = Array(repeating: 0, count: SpectrumBands.count)
         var lastSound: ContinuousClock.Instant?
         var gate = SoundGate()
     }
 
     private let setup = NSRecursiveLock()
+    private let spectrum = SpectrumAnalyzer()
     private let state = OSAllocatedUnfairLock(initialState: State())
     private static let logger = Logger(subsystem: "com.donovanhiland.navi", category: "Microphone")
     private let listenerQueue = DispatchQueue(label: "com.donovanhiland.navi.microphone")
@@ -109,6 +111,8 @@ final class Microphone: @unchecked Sendable {
 
     var level: Float { state.withLock { $0.level } }
 
+    var bands: [Float] { state.withLockUnchecked { $0.bands } }
+
     func prepare() throws {
         setup.lock()
         defer { setup.unlock() }
@@ -139,6 +143,7 @@ final class Microphone: @unchecked Sendable {
                 state.running = false
                 state.sink = nil
                 state.level = 0
+                state.bands = Array(repeating: 0, count: SpectrumBands.count)
                 _ = state.preRoll.drain()
             }
             return (state.running, state.unit, state.sink)
@@ -281,14 +286,24 @@ final class Microphone: @unchecked Sendable {
     private func receive(_ buffer: AVAudioPCMBuffer) {
         let decibels = Self.decibels(of: buffer)
         let level = Self.loudness(decibels: decibels)
+        let bands = Self.bands(of: buffer, using: spectrum)
         let now = ContinuousClock.now
         let sink = state.withLockUnchecked { state -> AsyncStream<AudioChunk>.Continuation? in
             state.level = level
+            state.bands = bands
             if state.gate.isSound(decibels: decibels) { state.lastSound = now }
             if state.sink == nil { state.preRoll.append(buffer, frames: Int(buffer.frameLength)) }
             return state.sink
         }
         sink?.yield(AudioChunk(buffer: buffer))
+    }
+
+    private static func bands(of buffer: AVAudioPCMBuffer, using spectrum: SpectrumAnalyzer) -> [Float] {
+        guard let channel = buffer.floatChannelData?[0], buffer.frameLength > 0 else {
+            return Array(repeating: 0, count: SpectrumBands.count)
+        }
+        let samples = UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))
+        return spectrum.bands(adding: samples, sampleRate: buffer.format.sampleRate)
     }
 
     static func loudness(of buffer: AVAudioPCMBuffer) -> Float {

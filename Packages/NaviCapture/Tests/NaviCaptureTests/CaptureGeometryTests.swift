@@ -171,6 +171,32 @@ import Testing
         #expect(CaptureGeometry.toolbarOrigin(below: right, toolbar: Self.bar, in: Self.screen, gap: 8, margin: 10).x == 590)
     }
 
+    private static let column = CGSize(width: 30, height: 96)
+
+    @Test func actionsStandRightOfTheAreaAtItsBottom() {
+        let area = CGRect(x: 300, y: 100, width: 200, height: 150)
+        let origin = CaptureGeometry.actionsOrigin(beside: area, column: Self.column, in: Self.screen, gap: 8, margin: 10)
+        #expect(origin == CGPoint(x: 508, y: 154))
+    }
+
+    @Test func actionsGoLeftWhenTheRightIsFull() {
+        let area = CGRect(x: 300, y: 100, width: 670, height: 150)
+        let origin = CaptureGeometry.actionsOrigin(beside: area, column: Self.column, in: Self.screen, gap: 8, margin: 10)
+        #expect(origin == CGPoint(x: 262, y: 154))
+    }
+
+    @Test func actionsGoInsideTheTopRightWhenBothSidesAreFull() {
+        let area = CGRect(origin: .zero, size: Self.screen)
+        let origin = CaptureGeometry.actionsOrigin(beside: area, column: Self.column, in: Self.screen, gap: 8, margin: 10)
+        #expect(origin == CGPoint(x: 960, y: 10))
+    }
+
+    @Test func actionsStayOnScreenForAShortArea() {
+        let area = CGRect(x: 300, y: 0, width: 200, height: 40)
+        let origin = CaptureGeometry.actionsOrigin(beside: area, column: Self.column, in: Self.screen, gap: 8, margin: 10)
+        #expect(origin == CGPoint(x: 508, y: 10))
+    }
+
     @Test func tipGoesAboveTheMouse() {
         let frame = CaptureGeometry.tipFrame(size: CGSize(width: 80, height: 20), mouse: CGPoint(x: 500, y: 100), gap: 14, in: CGRect(x: 0, y: 0, width: 1000, height: 800))
         #expect(frame == CGRect(x: 460, y: 114, width: 80, height: 20))

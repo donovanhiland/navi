@@ -191,6 +191,18 @@ public enum CaptureGeometry {
         return CGPoint(x: x, y: max(margin, inside))
     }
 
+    public static func actionsOrigin(beside area: CGRect, column: CGSize, in screen: CGSize, gap: CGFloat, margin: CGFloat) -> CGPoint {
+        let maxY = max(margin, screen.height - column.height - margin)
+        let y = min(max(area.maxY - column.height, margin), maxY)
+        let right = area.maxX + gap
+        if right + column.width <= screen.width - margin { return CGPoint(x: right, y: y) }
+        let left = area.minX - gap - column.width
+        if left >= margin { return CGPoint(x: left, y: y) }
+        let insideX = min(area.maxX, screen.width - margin) - column.width
+        let insideY = min(max(area.minY, margin), maxY)
+        return CGPoint(x: max(margin, insideX), y: insideY)
+    }
+
     public static func tipFrame(size: CGSize, mouse: CGPoint, gap: CGFloat, in screen: CGRect) -> CGRect {
         let x = min(max(mouse.x - size.width / 2, screen.minX), max(screen.minX, screen.maxX - size.width))
         let above = mouse.y + gap

@@ -107,6 +107,7 @@ struct AnnotateToolbar: View {
     var showsDragThumbnail = true
     var onSave: (() -> Void)?
     var onStash: (() -> Void)?
+    var showsActions = true
 
     private static let drawingTools: [AnnotationTool] = [
         .select, .arrow, .rectangle, .filledRectangle, .ellipse, .line, .pencil, .highlighter, .text, .counter,
@@ -119,14 +120,12 @@ struct AnnotateToolbar: View {
                 toolGroups
                 styleGroup
                 historyGroup
-                Spacer(minLength: 16)
-                actions
+                trailingActions
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     toolGroups
-                    Spacer(minLength: 16)
-                    actions
+                    trailingActions
                 }
                 HStack(spacing: 10) {
                     styleGroup
@@ -138,8 +137,7 @@ struct AnnotateToolbar: View {
                 HStack(spacing: 10) {
                     styleGroup
                     historyGroup
-                    Spacer(minLength: 16)
-                    actions
+                    trailingActions
                 }
             }
         }
@@ -203,6 +201,13 @@ struct AnnotateToolbar: View {
             IconButton(action: model.redo) { Image(systemName: "arrow.uturn.forward") }
                 .disabled(!model.canRedo)
                 .tooltip(Tip(title: "Redo", shortcut: "⇧⌘Z"))
+        }
+    }
+
+    @ViewBuilder private var trailingActions: some View {
+        if showsActions {
+            Spacer(minLength: 16)
+            actions
         }
     }
 

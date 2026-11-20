@@ -209,6 +209,7 @@ struct InPlaceAnnotateView: View {
     let onCancel: () -> Void
     var revealOverride: CGFloat?
     @State private var toolbarSize = CGSize(width: 900, height: 44)
+    @State private var actionsSize = CGSize(width: 30, height: 94)
     @State private var tips = TooltipCenter()
     @State private var reveal: CGFloat = 0
     @State private var pointer: CGPoint?
@@ -226,6 +227,9 @@ struct InPlaceAnnotateView: View {
             let toolbarOrigin = CaptureGeometry.toolbarOrigin(
                 below: hole, toolbar: toolbarSize, in: proxy.size, gap: Self.toolbarGap, margin: Self.screenMargin
             )
+            let actionsOrigin = CaptureGeometry.actionsOrigin(
+                beside: hole, column: actionsSize, in: proxy.size, gap: Self.toolbarGap, margin: Self.screenMargin
+            )
             ZStack(alignment: .topLeading) {
                 if let backdrop {
                     Image(decorative: backdrop, scale: 1)
@@ -240,6 +244,8 @@ struct InPlaceAnnotateView: View {
                 frameAdjuster(hole: hole, screen: proxy.size)
                 toolbar
                     .offset(x: toolbarOrigin.x, y: toolbarOrigin.y)
+                actions
+                    .offset(x: actionsOrigin.x, y: actionsOrigin.y)
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
             .coordinateSpace(.named(Self.space))
@@ -248,7 +254,11 @@ struct InPlaceAnnotateView: View {
                 updateReveal(hole: hole)
                 if let point = pointer {
                     let toolbarFrame = CGRect(origin: toolbarOrigin, size: toolbarSize)
-                    currentPointer(at: point, hole: hole, toolbar: toolbarFrame).cursor.set()
+                    let actionsFrame = CGRect(origin: actionsOrigin, size: actionsSize)
+                    let cursor = actionsFrame.contains(point)
+                        ? AnnotateModel.Pointer.arrow
+                        : currentPointer(at: point, hole: hole, toolbar: toolbarFrame)
+                    cursor.cursor.set()
                 }
             }
             .tooltipLayer(tips)
@@ -330,12 +340,17 @@ struct InPlaceAnnotateView: View {
     private var toolbar: some View {
         AnnotateToolbar(
             model: model, onDone: onDone, onCancel: onCancel, doneTitle: "Copy", doneModifiers: nil,
-            showsDragThumbnail: false, onSave: onSave, onStash: onStash
+            showsDragThumbnail: false, onSave: onSave, onStash: onStash, showsActions: false
         )
             .fixedSize()
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
             .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
             .onGeometryChange(for: CGSize.self) { $0.size } action: { toolbarSize = $0 }
+    }
+
+    private var actions: some View {
+        InPlaceActions(onCancel: onCancel, onStash: onStash, onSave: onSave, onCopy: onDone)
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { actionsSize = $0 }
     }
 }

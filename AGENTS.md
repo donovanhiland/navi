@@ -274,7 +274,12 @@ video editor.
   `⇧⌘5` bar), the frozen screen stays dimmed and the
   shot becomes the markup canvas in place (`Annotate/InPlaceAnnotator.swift`),
   with the toolbar floating below it (above it near the bottom, inside it when
-  it fills the screen). No window or title bar. A window shot sits on the
+  it fills the screen). The toolbar holds only the markup tools, centered on
+  the shot. Cancel, Stash, Save, and Copy are a small column of 22 × 20 pt
+  icon buttons (`Annotate/InPlaceActions.swift`, Copy in the accent color),
+  bottom-aligned just right of the shot; left of it when the right has no
+  room, inside its top-right corner when neither side has room
+  (`CaptureGeometry.actionsOrigin`). No window or title bar. A window shot sits on the
   window and its frame is locked; while it is taken, the dim overlay stays up. The window
   under the pointer is captured while you hover it (`WindowPrefetch`, after
   80 ms still), while its app is still frontmost so it looks active. A click on
@@ -290,7 +295,7 @@ video editor.
   their pixels (`ScreenPlacement`). One undo puts a whole drag back. A crop
   keeps the kept pixels in place; rotate, flip, or resize lock the frame. The
   dim outside is 0.42. One hover handler on the whole screen picks the pointer
-  (`InPlaceAnnotateView.pointer`): arrow over the toolbar, open hand over the
+  (`InPlaceAnnotateView.pointer`): arrow over the toolbar and the action column, open hand over the
   move tab, resize arrows on the frame edge, the tool's pointer inside the shot;
   the canvas does not set its own there. The toolbar uses the custom tooltips
   (`tooltipLayer`), since AppKit tool tips do not show while Navi is in the

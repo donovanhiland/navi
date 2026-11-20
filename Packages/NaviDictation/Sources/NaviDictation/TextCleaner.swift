@@ -113,7 +113,28 @@ struct TextCleaner: Sendable {
     static func isPlausible(_ candidate: String, comparedTo basic: String) -> Bool {
         guard !candidate.isEmpty else { return false }
         let ratio = Double(candidate.count) / Double(max(basic.count, 1))
-        return ratio >= 0.5 && ratio <= 1.3
+        guard ratio >= 0.5, ratio <= 1.3 else { return false }
+        return share(of: candidate, in: basic) >= minimumSharedWords
+    }
+
+    static let minimumSharedWords = 0.9
+
+    static func share(of text: String, in other: String) -> Double {
+        let original = words(in: text)
+        guard !original.isEmpty else { return 1 }
+        var available = Dictionary(words(in: other).map { ($0, 1) }, uniquingKeysWith: +)
+        let found = original.filter { word in
+            guard let count = available[word], count > 0 else { return false }
+            available[word] = count - 1
+            return true
+        }
+        return Double(found.count) / Double(original.count)
+    }
+
+    private static func words(in text: String) -> [String] {
+        text.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber && $0 != "'" })
+            .map(String.init)
     }
 }
 

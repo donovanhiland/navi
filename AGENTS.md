@@ -84,9 +84,10 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   to Start and Stop" in Settings, off by default: one tap locks, the next press
   types), pill with a waveform and live text ("Show Words While Talking", on by
   default: one line of words above shorter bars, no wider than the bars, the
-  newest words stay in view and the oldest are cut with "…"; Parakeet reads the newest 10 s again every 0.6 s for it,
-  Apple speech uses its partial results; only shown, the typed text still comes
-  from the sentence passes and the final pass), on-device speech (Parakeet TDT v3 through FluidAudio, from Hex;
+  newest words stay in view and the oldest are cut with "…"; Parakeet reads the newest 10 s again every 0.3 s for it
+  and shows only the words two reads in a row agree on, so a cut-off last word or a guessed ending never
+  shows; Apple speech uses its partial results; only shown, the typed text still comes
+  from the sentence passes and the final pass; a lock icon shows in hands-free mode), on-device speech (Parakeet TDT v3 through FluidAudio, from Hex;
   `SpeechAnalyzer` or `SFSpeechRecognizer` until the Parakeet model is loaded.
   The model, about 0.5 GB, downloads on first start to
   `~/Library/Application Support/FluidAudio/Models`), cleanup with Foundation Models or rules, paste at the
@@ -121,9 +122,19 @@ Desktop Icons). Not checked yet: the `⌥⇧⌘N` menu and a second display.
   model only for sentences that need it (`TextCleaner.needsModel`: corrections,
   lists, spoken punctuation, filler words rules keep, repeats, long sentences
   with no commas). Timings log under the `Dictation` category ("Release to
-  text: … ms", "Live: …"). fn with another key (fn+⌫,
+  text: … ms" with the engine and word count, "Live: …"). fn with another key (fn+⌫,
   fn+arrows) never dictates. Esc cancels at any point (holding, locked, or
   while the text is being made): nothing is typed, pasted, or added to the history.
+  Esc while a newer dictation is listening cancels that one; the next Esc cancels texts still being made.
+  A new press works while the last text is still being made (like Hex): each dictation has its own
+  capture id, the old one keeps its release tail, and texts are typed in the order of the presses, at
+  least 200 ms apart. The old clipboard comes back 600 ms after the paste, in the background. Navi's own
+  ⌘V is marked, so the key listener does not take it for a key pressed during a hold. If the microphone
+  stops mid-dictation and cannot restart (input change), nothing is typed and a message says so; a
+  failed speech pass also shows a message. Audio over 15 s keeps a 2 to 6 word phrase repeated where
+  FluidAudio's chunks meet only once (not after a comma or period, not one word, not numbers, not a
+  phrase that is itself a repeat, not a run of three or more copies). The model cleanup is rejected when
+  more than 10% of its words were never said.
   The first launch asks before it uses fn. When on and the Talk Key is fn,
   Navi borrows the fn key setting (`AppleFnUsageType` = 0, "Do Nothing", applied
   with `activateSettings -u`) while it runs and puts it back on quit, or when
@@ -426,7 +437,8 @@ NAVI_TOOLTIP_FRAMES=/tmp/navi-tips swift test --filter TooltipDemo  # in NaviCap
 NAVI_TEXT_FRAMES=/tmp/navi-text swift test --filter TextDemo  # in NaviCapture: records the text tool (type, wrap, size, color, side and corner handles) as 30 fps PNG frames
 cd Packages/NaviRecording && swift test # recording math, GIF, audio mixdown
 cd Packages/NaviDictation && swift test # cleanup rules, fn gestures, Talk Key, fn setting, scoring
-cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--failures] [--save]
+cd Packages/NaviDictation && swift run dictation-bench [--audio [--speech apple,parakeet]] [--category long] [--failures] [--save]
+NAVI_LIVE_OUT=/tmp/live.json swift test --filter LivePreviewReplay  # in NaviDictation: plays spoken audio in real time through LiveDictation and checks the live words
 cd Packages/NaviDictation && swift run -c release dictation-bench --latency [--failures]  # release-to-text time for 3 s to 60 s dictations, live and not
 cd Packages/NaviPad && swift test       # iPhone pad state, store, cleanup diff
 cd iOS && xcodegen generate && xcodebuild -project NaviPhone.xcodeproj -scheme NaviPhone \

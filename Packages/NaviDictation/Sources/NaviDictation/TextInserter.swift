@@ -12,8 +12,24 @@ enum TextInserter {
         let entries: [(type: NSPasteboard.PasteboardType, data: Data)]
     }
 
-    static func insert(_ text: String, pasteboard: NSPasteboard = .general) async {
-        let saved = save(pasteboard)
+    private struct PendingRestore {
+        let id: UUID
+        let saved: [SavedItem]
+        let changeCount: Int
+        let task: Task<Void, Never>
+    }
+
+    private static var pending: PendingRestore?
+    static let pasteGap: Duration = .milliseconds(200)
+    private static var lastPaste: ContinuousClock.Instant?
+
+    @discardableResult
+    static func insert(_ text: String, pasteboard: NSPasteboard = .general) async -> Bool {
+        if let lastPaste {
+            try? await Task.sleep(until: lastPaste + pasteGap, clock: .continuous)
+            guard !Task.isCancelled else { return false }
+        }
+        let saved = takeSaved(from: pasteboard)
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
@@ -22,11 +38,33 @@ enum TextInserter {
         let ourChangeCount = pasteboard.changeCount
 
         try? await Task.sleep(for: .milliseconds(30))
+        guard !Task.isCancelled else {
+            if pasteboard.changeCount == ourChangeCount { restore(saved, to: pasteboard) }
+            return false
+        }
         pressCommandV()
-        try? await Task.sleep(for: restoreDelay)
+        lastPaste = .now
+        scheduleRestore(saved, changeCount: ourChangeCount, pasteboard: pasteboard)
+        return true
+    }
 
-        guard pasteboard.changeCount == ourChangeCount else { return }
-        restore(saved, to: pasteboard)
+    private static func takeSaved(from pasteboard: NSPasteboard) -> [SavedItem] {
+        guard let waiting = pending else { return save(pasteboard) }
+        waiting.task.cancel()
+        pending = nil
+        return pasteboard.changeCount == waiting.changeCount ? waiting.saved : save(pasteboard)
+    }
+
+    private static func scheduleRestore(_ saved: [SavedItem], changeCount: Int, pasteboard: NSPasteboard) {
+        let id = UUID()
+        let task = Task { @MainActor in
+            try? await Task.sleep(for: restoreDelay)
+            guard !Task.isCancelled, pending?.id == id else { return }
+            pending = nil
+            guard pasteboard.changeCount == changeCount else { return }
+            restore(saved, to: pasteboard)
+        }
+        pending = PendingRestore(id: id, saved: saved, changeCount: changeCount, task: task)
     }
 
     static func save(_ pasteboard: NSPasteboard) -> [SavedItem] {
@@ -56,6 +94,8 @@ enum TextInserter {
         let up = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: false)
         down?.flags = .maskCommand
         up?.flags = .maskCommand
+        SyntheticKey.mark(down)
+        SyntheticKey.mark(up)
         down?.post(tap: .cgAnnotatedSessionEventTap)
         up?.post(tap: .cgAnnotatedSessionEventTap)
     }

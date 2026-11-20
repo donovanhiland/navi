@@ -61,10 +61,12 @@ final class FnKeyMonitor {
             return false
         }
         globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard !SyntheticKey.isNavi(event.cgEvent) else { return }
             let combo = KeyCombo.from(keyCode: event.keyCode, cocoaFlags: event.modifierFlags)
             MainActor.assumeIsolated { self?.keyPressed(combo) }
         }
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard !SyntheticKey.isNavi(event.cgEvent) else { return event }
             let combo = KeyCombo.from(keyCode: event.keyCode, cocoaFlags: event.modifierFlags)
             MainActor.assumeIsolated { self?.keyPressed(combo) }
             return event

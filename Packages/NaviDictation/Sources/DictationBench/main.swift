@@ -44,7 +44,9 @@ let engines = (values("--engines").first ?? "rules,apple")
     .split(separator: ",")
     .compactMap { DictationPipeline.Cleanup(rawValue: String($0)) }
 
+let categories = Set((values("--category").first ?? "").split(separator: ",").map(String.init))
 let cases = try JSONDecoder().decode(CaseFile.self, from: Data(contentsOf: casesURL)).cases
+    .filter { categories.isEmpty || categories.contains($0.category) }
 print("\(cases.count) cases from \(casesURL.path)")
 if engines.contains(.apple), !DictationPipeline.appleModelIsReady {
     print("Note: Apple's model is not ready on this Mac, so \"apple\" gives the rules result.")

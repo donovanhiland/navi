@@ -61,8 +61,9 @@ final class LiveDictation: Sendable {
             let samples = try ParakeetEngine.samples(of: snapshot.buffers)
             guard samples.count > 1600 else { return "" }
             if samples.count - snapshot.cut > 1600 {
-                let text = try await ParakeetModel.shared.transcribe(Array(samples[min(snapshot.cut, samples.count)...]))
-                sentences += Sentences.split(text)
+                let tail = Array(samples[min(snapshot.cut, samples.count)...])
+                let text = try await ParakeetModel.shared.transcribe(tail)
+                sentences += Sentences.split(ParakeetEngine.repairingSeams(text, samples: tail.count))
             }
         }
         let heard = ContinuousClock.now
@@ -98,8 +99,10 @@ final class LiveDictation: Sendable {
         let samples = try ParakeetEngine.samples(of: buffers)
         guard samples.count - cut > 1600 else { return }
         let (text, tokens) = try await ParakeetModel.shared.transcribeWithTimes(Array(samples[cut...]))
-        let all = Sentences.split(text)
+        let repair = { ParakeetEngine.repairingSeams($0, samples: samples.count - cut) }
+        let all = Sentences.split(text).map(repair)
         let done = Self.finishedSentences(in: samples, after: cut, text: text, tokens: tokens)
+            .map { (sentences: $0.sentences.map(repair), cut: $0.cut) }
         let rest = Array(all.dropFirst(done?.sentences.count ?? 0))
         let applied = state.withLockUnchecked { state -> Bool in
             guard state.cut == cut else { return false }

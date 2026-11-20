@@ -83,4 +83,12 @@ struct TextCleanupTests {
         #expect(!TextCleaner.isPlausible("Sure! Here is a long answer about reports and why Friday matters for every team.", comparedTo: basic))
         #expect(!TextCleaner.isPlausible("Report.", comparedTo: basic))
     }
+
+    @Test("model answers with words the speaker never said are rejected")
+    func newWords() {
+        let basic = "I think we should ship the new build on Monday because QA needs two more days."
+        #expect(TextCleaner.isPlausible("I think we should ship the new build on Monday, because QA needs two more days.", comparedTo: basic))
+        #expect(TextCleaner.isPlausible("We should ship the new build on Monday because QA needs two more days.", comparedTo: basic))
+        #expect(!TextCleaner.isPlausible("I believe we ought to release the latest version on Monday since testers want extra days.", comparedTo: basic))
+    }
 }

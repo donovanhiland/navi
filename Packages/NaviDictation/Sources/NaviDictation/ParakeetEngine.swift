@@ -24,6 +24,7 @@ actor ParakeetModel {
     private var loading: Task<AsrManager, any Error>?
     private var isBusy = false
     private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var finalsWaiting = 0
 
     nonisolated static var isDownloaded: Bool {
         AsrModels.modelsExist(at: AsrModels.defaultCacheDirectory(for: version), version: version)
@@ -60,14 +61,23 @@ actor ParakeetModel {
     }
 
     func transcribeWithTimes(_ samples: [Float]) async throws -> (text: String, tokens: [Sentences.Token]) {
+        finalsWaiting += 1
+        defer { finalsWaiting -= 1 }
         let manager = try await prepare()
         await takeTurn()
         defer { endTurn() }
-        return try await run(samples, on: manager)
+        try Task.checkCancellation()
+        return try await run(Self.padded(samples), on: manager)
+    }
+
+    static func padded(_ samples: [Float]) -> [Float] {
+        let minimum = ASRConstants.minimumRequiredSamples(forSampleRate: 16000)
+        guard samples.count < minimum else { return samples }
+        return samples + Array(repeating: 0, count: minimum - samples.count)
     }
 
     func preview(_ samples: [Float]) async -> String? {
-        guard let manager, !isBusy else { return nil }
+        guard let manager, !isBusy, finalsWaiting == 0 else { return nil }
         isBusy = true
         defer { endTurn() }
         return try? await run(samples, on: manager, boosts: false).text
@@ -185,35 +195,54 @@ struct ParakeetEngine: SpeechEngine {
         try Task.checkCancellation()
         let samples = try Self.samples(of: store.all)
         guard samples.count > 1600 else { return "" }
-        return try await ParakeetModel.shared.transcribe(samples)
+        return Self.repairingSeams(try await ParakeetModel.shared.transcribe(samples), samples: samples.count)
+    }
+
+    static func repairingSeams(_ text: String, samples: Int) -> String {
+        samples > ASRConstants.maxModelSamples ? SeamRepair.collapsingRepeats(text) : text
     }
 
     static func runPreviews(of buffers: @Sendable () -> [AVAudioPCMBuffer], onPartial: PartialHandler) async {
         let converter = AudioConverter()
         var lastCount = 0
+        var previous = ""
+        var next = ContinuousClock.now
         while !Task.isCancelled {
-            try? await Task.sleep(for: LiveText.previewInterval)
+            next = max(next + LiveText.previewInterval, ContinuousClock.now)
+            try? await Task.sleep(until: next, clock: .continuous)
+            guard !Task.isCancelled else { return }
             let buffers = buffers()
-            guard buffers.count != lastCount, let format = buffers.first?.format else { continue }
+            guard buffers.count != lastCount, !buffers.isEmpty else { continue }
             lastCount = buffers.count
             let (start, clipped) = LiveText.tailStart(
-                frameCounts: buffers.map { Int($0.frameLength) },
-                sampleRate: format.sampleRate,
+                durations: buffers.map { Double($0.frameLength) / $0.format.sampleRate },
                 window: LiveText.previewWindow
             )
-            guard let joined = join(Array(buffers[start...])),
-                  let samples = try? converter.resampleBuffer(joined),
+            guard let samples = try? samples(of: Array(buffers[start...]), converter: converter),
                   Double(samples.count) >= LiveText.minimumAudio * 16000,
                   let text = await ParakeetModel.shared.preview(samples),
                   !Task.isCancelled
             else { continue }
-            onPartial(LiveText.trimmed(text, clipped: clipped))
+            let current = LiveText.trimmed(text, clipped: clipped)
+            let shown = LiveText.stable(previous: previous, current: current)
+            previous = current
+            guard !shown.isEmpty else { continue }
+            onPartial(shown)
         }
     }
 
-    static func samples(of buffers: [AVAudioPCMBuffer]) throws -> [Float] {
-        guard let joined = join(buffers) else { return [] }
-        return try AudioConverter().resampleBuffer(joined)
+    static func samples(of buffers: [AVAudioPCMBuffer], converter: AudioConverter = AudioConverter()) throws -> [Float] {
+        var samples: [Float] = []
+        var run: [AVAudioPCMBuffer] = []
+        for buffer in buffers {
+            if let format = run.first?.format, format != buffer.format {
+                if let joined = join(run) { samples += try converter.resampleBuffer(joined) }
+                run = []
+            }
+            run.append(buffer)
+        }
+        if let joined = join(run) { samples += try converter.resampleBuffer(joined) }
+        return samples
     }
 
     static func join(_ buffers: [AVAudioPCMBuffer]) -> AVAudioPCMBuffer? {

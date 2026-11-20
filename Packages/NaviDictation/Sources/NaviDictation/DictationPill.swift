@@ -47,6 +47,11 @@ struct PillView: View {
             HStack(spacing: Self.spacing) {
                 switch model.phase {
                 case .listening:
+                    if model.isLocked {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: showsWords ? 8 : 10, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.8))
+                    }
                     Waveform(levels: model.levels, compact: showsWords)
                 case .thinking:
                     ProgressView()

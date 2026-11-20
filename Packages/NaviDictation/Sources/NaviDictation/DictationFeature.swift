@@ -20,8 +20,9 @@ public final class DictationFeature {
     private let microphone = Microphone()
     private var monitor: FnKeyMonitor?
     private var session: Session?
-    private var isProcessing = false
-    private var processing: Task<Void, Never>?
+    private var jobs: [UUID: Task<Void, Never>] = [:]
+    private var lastJob: Task<Void, Never>?
+    private var isProcessing: Bool { !jobs.isEmpty }
     private var isStarted = false
     private var levelTimer: Timer?
     private var learnTask: Task<Void, Never>?
@@ -96,6 +97,26 @@ public final class DictationFeature {
 
     public init(inbox: Inbox) {
         self.inbox = inbox
+        microphone.onCaptureLost { [weak self] ids in
+            Task { @MainActor in self?.captureLost(ids) }
+        }
+    }
+
+    private func captureLost(_ ids: [UUID]) {
+        var lost = false
+        for id in ids {
+            if session?.id == id {
+                cancelSession()
+                monitor?.reset()
+                lost = true
+            }
+            if let job = jobs[id] {
+                job.cancel()
+                lost = true
+            }
+        }
+        guard lost else { return }
+        onProblem?("The microphone stopped, so nothing was typed. Try again.")
     }
 
     public func start() {
@@ -192,7 +213,7 @@ public final class DictationFeature {
         if monitor == nil {
             monitor = FnKeyMonitor(
                 onAction: { [weak self] action in self?.handle(action) },
-                onIdleEscape: { [weak self] in self?.cancelProcessing() }
+                onIdleEscape: { [weak self] in self?.cancelProcessing(reason: "Esc") }
             )
         }
         let trigger = trigger
@@ -207,6 +228,7 @@ public final class DictationFeature {
     private func detachMonitor() {
         monitor?.stop()
         monitor = nil
+        cancelProcessing(reason: "Talk to Type turned off")
         cancelSession()
     }
 
@@ -219,16 +241,21 @@ public final class DictationFeature {
         }
     }
 
+    private struct Heard: Sendable {
+        let text: String
+        let engine: String
+    }
+
     private struct Session {
         let id: UUID
-        let transcription: Task<String, any Error>
+        let transcription: Task<Heard, any Error>
         let pressedAt: ContinuousClock.Instant
         let sourceApp: String?
         let sourceBundleID: String?
     }
 
     private func begin() {
-        guard session == nil, !isProcessing else {
+        guard session == nil else {
             monitor?.reset()
             return
         }
@@ -253,13 +280,14 @@ public final class DictationFeature {
                 Task { @MainActor in self?.showLiveText(text, for: id) }
             }
         }
-        let transcription = Task.detached { () -> String in
+        let transcription = Task.detached { () -> Heard in
             let engine = await SpeechEngines.best()
+            let name = String(describing: type(of: engine))
             if engine is ParakeetEngine {
-                return try await LiveDictation(onPartial: onPartial).transcribe(audio: stream)
+                return Heard(text: try await LiveDictation(onPartial: onPartial).transcribe(audio: stream), engine: name)
             }
             let raw = try await engine.transcribe(audio: stream, onPartial: onPartial)
-            return await TextCleaner().clean(raw)
+            return Heard(text: await TextCleaner().clean(raw), engine: name)
         }
         let app = NSWorkspace.shared.frontmostApplication
         let session = Session(
@@ -270,7 +298,7 @@ public final class DictationFeature {
 
         let microphone = microphone
         if microphone.isRunning {
-            microphone.beginCapture(into: continuation, includePreRoll: true)
+            microphone.beginCapture(id: id, into: continuation, includePreRoll: true)
             return
         }
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -280,24 +308,27 @@ public final class DictationFeature {
                 await MainActor.run {
                     Self.logger.error("Could not start the microphone: \(error.localizedDescription)")
                     continuation.finish()
-                    self?.cancelSession()
-                    self?.onProblem?("Navi could not start the microphone.")
+                    guard let self, self.session?.id == session.id else { return }
+                    self.cancelSession()
+                    self.monitor?.reset()
+                    self.onProblem?("Navi could not start the microphone.")
                 }
                 return
             }
             await MainActor.run {
                 guard let self, self.session?.id == session.id else {
                     continuation.finish()
+                    self?.updateMicrophone()
                     return
                 }
-                microphone.beginCapture(into: continuation, includePreRoll: false)
+                microphone.beginCapture(id: session.id, into: continuation, includePreRoll: true)
                 Self.logger.info("Microphone ready \((ContinuousClock.now - session.pressedAt).milliseconds) ms after the press")
             }
         }
     }
 
     private func showLiveText(_ text: String, for id: UUID) {
-        guard session?.id == id else { return }
+        guard session?.id == id, !text.isEmpty else { return }
         pill.model.liveText = text
     }
 
@@ -312,65 +343,83 @@ public final class DictationFeature {
         levelTimer?.invalidate()
         levelTimer = nil
         pill.model.phase = .thinking
-        isProcessing = true
+        let previous = lastJob
         let released = ContinuousClock.now
-
-        processing = Task {
-            defer {
-                isProcessing = false
-                processing = nil
-                updateMicrophone()
-            }
-            await microphone.waitForReleaseTail(releasedAt: released)
-            let tail = ContinuousClock.now - released
-            microphone.endCapture()
-            let text: String
-            do {
-                let transcription = session.transcription
-                text = try await withTaskCancellationHandler {
-                    try await transcription.value
-                } onCancel: {
-                    transcription.cancel()
-                }
-            } catch {
-                Self.logger.error("Speech failed: \(error.localizedDescription)")
-                text = ""
-            }
-            guard !Task.isCancelled else { return }
-            pill.hide()
-            Self.logger.info(
-                "Release to text: \((ContinuousClock.now - released).milliseconds) ms (tail \(tail.milliseconds) ms)"
-            )
-            guard !text.isEmpty else { return }
-            guard TextInserter.hasAccessibility else {
-                TextInserter.requestAccessibility()
-                onProblem?("Navi needs the Accessibility permission to type your text.")
-                inbox.add(text: text, kind: .dictation, sourceApp: session.sourceApp, sourceBundleID: session.sourceBundleID)
-                return
-            }
-            await TextInserter.insert(text)
-            inbox.add(text: text, kind: .dictation, sourceApp: session.sourceApp, sourceBundleID: session.sourceBundleID)
+        let job = Task {
+            await self.process(session, released: released, after: previous)
+            await previous?.value
         }
+        jobs[session.id] = job
+        lastJob = job
     }
 
-    private func cancelProcessing() {
-        guard let processing else { return }
-        processing.cancel()
-        pill.hide()
-        Self.logger.info("Dictation cancelled with Esc while processing")
+    private func process(_ session: Session, released: ContinuousClock.Instant, after previous: Task<Void, Never>?) async {
+        let id = session.id
+        defer {
+            jobs[id] = nil
+            if jobs.isEmpty {
+                lastJob = nil
+                if self.session == nil { pill.hide() }
+                updateMicrophone()
+            }
+        }
+        await microphone.waitForReleaseTail(releasedAt: released)
+        let tail = ContinuousClock.now - released
+        microphone.endCapture(id: id)
+        let heard: Heard
+        do {
+            let transcription = session.transcription
+            heard = try await withTaskCancellationHandler {
+                try await transcription.value
+            } onCancel: {
+                transcription.cancel()
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            Self.logger.error("Speech failed: \(error.localizedDescription)")
+            onProblem?("Navi could not turn your speech into text. Try again.")
+            return
+        }
+        await previous?.value
+        guard !Task.isCancelled else { return }
+        if self.session == nil, jobs.keys.allSatisfy({ $0 == id }) { pill.hide() }
+        Self.logger.info(
+            "Release to text: \((ContinuousClock.now - released).milliseconds) ms (tail \(tail.milliseconds) ms), engine \(heard.engine, privacy: .public), \(heard.text.split(whereSeparator: \.isWhitespace).count) words"
+        )
+        let text = heard.text
+        guard !text.isEmpty else { return }
+        guard TextInserter.hasAccessibility else {
+            TextInserter.requestAccessibility()
+            onProblem?("Navi needs the Accessibility permission to type your text.")
+            inbox.add(text: text, kind: .dictation, sourceApp: session.sourceApp, sourceBundleID: session.sourceBundleID)
+            return
+        }
+        guard await TextInserter.insert(text) else { return }
+        inbox.add(text: text, kind: .dictation, sourceApp: session.sourceApp, sourceBundleID: session.sourceBundleID)
+    }
+
+    private func cancelProcessing(reason: String) {
+        guard isProcessing else { return }
+        jobs.values.forEach { $0.cancel() }
+        if session == nil { pill.hide() }
+        Self.logger.info("Dictation cancelled while processing: \(reason, privacy: .public)")
     }
 
     private func cancelSession() {
         guard let session else {
-            if isProcessing { cancelProcessing() } else { pill.hide() }
+            if isProcessing { cancelProcessing(reason: "Esc") } else { pill.hide() }
             return
         }
         self.session = nil
         levelTimer?.invalidate()
         levelTimer = nil
-        microphone.endCapture()
+        microphone.endCapture(id: session.id)
         session.transcription.cancel()
-        pill.hide()
+        if isProcessing {
+            pill.model.phase = .thinking
+        } else {
+            pill.hide()
+        }
         updateMicrophone()
     }
 

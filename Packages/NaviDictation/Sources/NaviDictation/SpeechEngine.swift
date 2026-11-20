@@ -227,7 +227,9 @@ private final class RecognitionJob: @unchecked Sendable {
             if let result, result.isFinal {
                 finish(.success(result.bestTranscription.formattedString))
             } else if let error {
-                finish(.failure(error))
+                let error = error as NSError
+                let noSpeech = error.domain == "kAFAssistantErrorDomain" && error.code == 1110
+                finish(noSpeech ? .success("") : .failure(error))
             } else if let result {
                 onPartial?(result.bestTranscription.formattedString)
             }

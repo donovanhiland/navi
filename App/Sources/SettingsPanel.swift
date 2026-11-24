@@ -44,6 +44,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
 
     func show(at anchor: CGPoint) {
         model.talkToType = talkToTypeToggles()
+        model.talkToTypeChoices = talkToTypeChoices()
         model.refresh()
         let panel = panel
         generation += 1
@@ -159,6 +160,7 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
     private func configure() {
         model.capture = captureToggles()
         model.talkToType = talkToTypeToggles()
+        model.talkToTypeChoices = talkToTypeChoices()
         model.vocabulary = app.dictation.vocabulary
         model.permissions = permissions()
         model.talkKey = { [app] in app.dictation.trigger.name }
@@ -234,6 +236,19 @@ final class SettingsPanel: NSObject, NSWindowDelegate {
                 detail: "Names and terms you copy help Parakeet hear them",
                 get: { dictation.learnsWords }, set: { dictation.learnsWords = $0 },
                 isEnabled: isOn
+            ),
+        ]
+    }
+
+    private func talkToTypeChoices() -> [SettingsModel.Choice] {
+        let dictation = app.dictation
+        return [
+            .init(
+                id: "pillGlow", title: "Pill Look",
+                options: PillGlowStyle.allCases.map { .init(id: $0.rawValue, title: $0.title) },
+                get: { dictation.pillGlow.rawValue },
+                set: { dictation.pillGlow = PillGlowStyle(rawValue: $0) ?? .standard },
+                isEnabled: { dictation.isEnabled }
             ),
         ]
     }

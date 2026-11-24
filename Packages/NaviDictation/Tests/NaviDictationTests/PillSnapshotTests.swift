@@ -29,8 +29,8 @@ struct PillSnapshotTests {
             model.phase = phase
             model.isLocked = locked
             model.liveText = text
-            model.levels = Self.levels(at: 1.3)
-            try Self.write(Scene(model: model, showsPill: true, fnDown: false, editorText: ""), to: folder.appending(path: "pill-\(name).png"))
+            for _ in 0 ..< 6 { model.push(bands: Self.bands(at: 0.2)) }
+            try Self.write(Scene(model: model, showsPill: true, fnDown: false, editorText: "", time: 0.2), to: folder.appending(path: "pill-\(name).png"))
         }
     }
 
@@ -45,22 +45,24 @@ struct PillSnapshotTests {
             let time = Double(index) / fps
             let model = PillModel()
             model.isLocked = true
-            model.levels = Self.levels(at: time)
+            for back in stride(from: 0.2, through: 0, by: -1 / fps) { model.push(bands: Self.bands(at: time - back)) }
             let heard = max(0, min(words.count, Int((time - 1.0) / 0.24)))
             model.liveText = words.prefix(heard).joined(separator: " ")
             if time >= 7.6 { model.phase = .thinking }
             let fnDown = (0.6 ..< 0.72).contains(time) || (7.6 ..< 7.72).contains(time)
             let showsPill = (0.6 ..< 8.3).contains(time)
-            let scene = Scene(model: model, showsPill: showsPill, fnDown: fnDown, editorText: time >= 8.3 ? Self.typed : "")
+            let scene = Scene(model: model, showsPill: showsPill, fnDown: fnDown, editorText: time >= 8.3 ? Self.typed : "", time: time)
             try Self.write(scene, to: frames.appending(path: String(format: "%04d.png", index)))
         }
     }
 
-    static func levels(at time: Double) -> [Float] {
-        (0 ..< PillModel.barCount).map { bar in
-            let t = time * 9 - Double(bar) * 0.45
-            let value = 0.5 + 0.5 * sin(t) * sin(t * 0.37 + 1.1)
-            return Float(max(0.05, min(1, value * 0.9)))
+    static func bands(at time: Double) -> [Float] {
+        let loudness = max(0, sin(time * 7.3) * sin(time * 2.1 + 1))
+        let formant = 0.3 + 0.15 * sin(time * 3.1)
+        return (0 ..< SpectrumBands.count).map { band in
+            let x = Double(band) / Double(SpectrumBands.count)
+            let shape = exp(-pow((x - formant) / 0.18, 2)) + 0.5 * exp(-pow((x - formant - 0.3) / 0.12, 2))
+            return Float(min(1, loudness * shape))
         }
     }
 
@@ -81,6 +83,7 @@ struct Scene: View {
     let showsPill: Bool
     let fnDown: Bool
     let editorText: String
+    var time: Double?
 
     var body: some View {
         ZStack {
@@ -92,7 +95,7 @@ struct Scene: View {
                 editor
                     .padding(.top, 40)
                 Spacer()
-                PillView(model: model)
+                PillView(model: model, time: time)
                     .opacity(showsPill ? 1 : 0)
                     .padding(.bottom, 4)
             }

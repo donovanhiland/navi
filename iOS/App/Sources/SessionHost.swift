@@ -44,6 +44,12 @@ final class SessionHost {
         }
         observeAudioSession()
         publish(.off)
+        #if DEBUG
+        if DemoScript.isOn {
+            startDemoSession()
+            return
+        }
+        #endif
         if ParakeetModel.isDownloaded { loadModel() }
         TextCleaner.prewarm()
     }
@@ -55,6 +61,12 @@ final class SessionHost {
     }
 
     func startSession() async {
+        #if DEBUG
+        if DemoScript.isOn {
+            startDemoSession()
+            return
+        }
+        #endif
         guard await ensurePermissions() else {
             problem = "Navi needs the microphone. Turn it on in Settings › Navi."
             return
@@ -112,6 +124,12 @@ final class SessionHost {
     }
 
     private func beginListening() {
+        #if DEBUG
+        if DemoScript.isOn {
+            beginDemoListening()
+            return
+        }
+        #endif
         guard state.isWarm(at: .now), recorder.isRunning else {
             publish(state.turnedOff())
             return
@@ -127,6 +145,12 @@ final class SessionHost {
 
     private func finishListening() {
         guard state.phase == .listening else { return }
+        #if DEBUG
+        if DemoScript.isOn {
+            finishDemoListening()
+            return
+        }
+        #endif
         stopListeningTasks()
         let audio = recorder.endCapture()
         publish(state.cleaning())
@@ -247,3 +271,53 @@ final class SessionHost {
         })
     }
 }
+
+#if DEBUG
+extension SessionHost {
+    fileprivate func startDemoSession() {
+        micAllowed = true
+        model = .ready
+        problem = nil
+        do {
+            try AudioSessionSetup.activate()
+            if !recorder.isRunning { try recorder.start() }
+        } catch {
+            Self.logger.error("Demo mic start failed: \(error.localizedDescription, privacy: .public)")
+        }
+        let until = Date.now.addingTimeInterval(PadState.readyLength)
+        publish(state.isWarm(at: .now) ? state.extended(until: until) : state.ready(until: until))
+        channel.post(.pong)
+    }
+
+    fileprivate func beginDemoListening() {
+        guard state.acceptsStart else { return }
+        finishing?.cancel()
+        let now = Date.now
+        publish(state.listening(at: now, until: now.addingTimeInterval(PadState.readyLength)))
+        live = Task { [weak self] in await self?.runDemoWords() }
+    }
+
+    private func runDemoWords() async {
+        let words = DemoScript.words
+        for count in 1...words.count {
+            try? await Task.sleep(for: DemoScript.wordStep)
+            guard !Task.isCancelled, state.phase == .listening else { return }
+            publish(state.heard(words.prefix(count).joined(separator: " ")).withLevel(DemoScript.level(at: count)))
+        }
+        while !Task.isCancelled, state.phase == .listening {
+            try? await Task.sleep(for: Self.meterInterval)
+            publish(state.withLevel(0.12))
+        }
+    }
+
+    fileprivate func finishDemoListening() {
+        stopListeningTasks()
+        publish(state.heard(DemoScript.raw).cleaning())
+        finishing = Task { [weak self] in
+            try? await Task.sleep(for: DemoScript.cleanupTime)
+            guard let self, !Task.isCancelled else { return }
+            publish(state.done(raw: DemoScript.raw, cleaned: DemoScript.cleaned, id: UUID()))
+        }
+    }
+}
+#endif

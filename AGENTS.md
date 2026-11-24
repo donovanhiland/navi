@@ -164,7 +164,8 @@ video editor.
 
 - **One app, one menu bar icon** on the Mac. This gives one set of macOS
   permissions (screen, mic, accessibility) and one shared history.
-- **iPhone: talk to type only** (`iOS/`, not built for TestFlight yet). A
+- **iPhone: talk to type only** (`iOS/`, shipped through TestFlight on team
+  `77SAW76597` with `scripts/testflight.sh`). A
   Navi keyboard that is only a mic pad, reached with the globe key, so Apple's
   keyboard (and its predictions) stays the main keyboard. A keyboard cannot use
   the mic, so the Navi app records in the background (`UIBackgroundModes:
@@ -175,8 +176,10 @@ video editor.
   to the previous keyboard. When the session is cold, the pad opens the app
   (`navi-ios://start`, responder-chain `openURL`); the user swipes back. The
   app reuses the Mac's speech and cleanup files (`TextCleanup`, `TextCleaner`,
-  `Sentences`, `SpeechEngine`, `ParakeetEngine`) straight from
-  `Packages/NaviDictation`, so keep those free of AppKit.
+  `Sentences`, `SpeechEngine`, `ParakeetEngine`, and what they use: `Vocabulary`,
+  `WordLearner`, `SeamRepair`, `LiveText`, `DurationMilliseconds`) straight from
+  `Packages/NaviDictation`, so keep those free of AppKit. A new file those use
+  must be added to `iOS/project.yml` too, or the iPhone build breaks.
 - **One Swift package per feature** under `Packages/`. Features talk only
   through `NaviCore`. A feature package never imports another feature package.
 - **Stack:** Swift 6, SwiftUI, and AppKit. Not Electron. Not Tauri.
@@ -536,13 +539,34 @@ Navi checks `…/releases/latest/download/appcast.xml` daily and from "Check for
 Updates…" in the menu. Debug builds never update themselves.
 
 The app icon is drawn by `scripts/make-icon.swift` into
-`App/Assets.xcassets/AppIcon.appiconset`.
+`App/Assets.xcassets/AppIcon.appiconset`. The iPhone icon is the same drawing,
+full bleed and with no alpha (iOS rounds the corners):
+`swift scripts/make-icon.swift iOS/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png 1024 ios`.
 
 To build a shareable copy without releasing it, run `scripts/share.sh`. It archives Release,
 then Xcode signs it with Developer ID, notarizes it with the Apple account
 signed in to Xcode, and staples it. Output: `dist/Navi.zip`. Not
 TestFlight or the App Store: both need the app sandbox, which blocks the system
 shortcut and paste features.
+
+The iPhone app goes to TestFlight with `scripts/testflight.sh [build-number]`.
+It archives `NaviPhone` (with the keyboard) for team `77SAW76597`, lets Xcode
+register the IDs and the App Group and make the profiles
+(`-allowProvisioningUpdates`), and uploads it with the Apple account signed in
+to Xcode. That account needs the Admin or App Manager role, and App Store
+Connect needs an app for `com.donovanhiland.navi.ios`. The build number
+defaults to the time (`yyyyMMddHHmm`); the version is `MARKETING_VERSION` in
+`iOS/project.yml`.
+`iOS/AppStore/testflight.md` holds the TestFlight text (description, what to
+test, review notes, privacy answers); `docs/privacy.md` is the privacy policy.
+
+Debug iPhone builds launched with `-NaviDemo YES` play a scripted dictation
+(`DemoScript`) through the real keyboard and app link, with no speech model
+needed: the mic session turns on at launch and the pad shows live words, the
+cleanup, and the typed text. Release builds leave it out (`#if DEBUG`). The App
+Store screenshots (1320 × 2868) and app preview (886 × 1920) in
+`iOS/AppStore/` come from Simulator captures of that mode
+(`scripts/appstore-media.sh <captures-folder>`; the script lists the files).
 
 Test locally with `scripts/dev.sh`. It quits Navi, builds, and runs Navi Dev
 (they share shortcuts, so one runs at a time). `scripts/dev.sh fresh` wipes

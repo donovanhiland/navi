@@ -234,6 +234,13 @@ video editor.
   Because Navi stays in the background, the overlay turns on the window
   server's `SetsCursorInBackground` (`BackgroundCursor`) while it is up, or
   macOS would keep the normal pointer instead of the crosshair.
+- A shot never moves you to another Space. After a shot, Navi gives focus back
+  only if it took focus, and only to an app with a window on the current Space
+  (`FocusHandoff`): the app that was in front if it has one here, else the app
+  of the top window here. macOS switches Spaces when it activates an app whose
+  windows are all on another Space, which is often the case for the "front"
+  app after a swipe between Spaces. Editor windows are ordered front before
+  Navi activates, for the same reason.
 - The area magnifier is a 76 pt rounded square, 9 pixels across, 20 pt right
   of and below the cursor, with a hex color strip. It glides to the other side
   at a display edge. Right-drag: up/down resizes it, left/right zooms. Both

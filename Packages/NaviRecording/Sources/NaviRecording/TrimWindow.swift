@@ -40,8 +40,8 @@ final class TrimWindow: NSObject, NSWindowDelegate {
 
     private func run() async -> URL? {
         guard let duration = try? await playerItem.asset.load(.duration).seconds, duration > 0 else { return nil }
-        NSApp.activate()
         window.makeKeyAndOrderFront(nil)
+        NSApp.activate()
         guard playerView.canBeginTrimming else {
             window.close()
             return nil

@@ -43,8 +43,8 @@ final class AnnotateEditor: NSObject, NSWindowDelegate {
     }
 
     func focus() {
-        NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
+        NSApp.activate()
     }
 
     private func finish() {

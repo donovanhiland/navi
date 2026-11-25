@@ -290,7 +290,7 @@ public final class CaptureFeature {
                 let ready = windowPrefetch.readyImage(for: id)
                 let pending = windowPrefetch.pending(for: id)
                 windowPrefetch.reset()
-                if ready != nil { NSApp.activate() } else { previousApp?.activate() }
+                if ready != nil { NSApp.activate() } else { FocusHandoff.giveBack(to: previousApp) }
                 let frame = ending?.windows.first { $0.id == id }?.frame
                 var request = ShotRequest(
                     source: .window(id, frame: frame), screen: screen, edits: true, backdrop: backdrop(screen),
@@ -323,7 +323,7 @@ public final class CaptureFeature {
                 break
             }
         }
-        previousApp?.activate()
+        let sourceApp = FocusHandoff.giveBack(to: previousApp)
         switch (outcome, purpose) {
         case (.cancelled, _):
             isBusy = false
@@ -332,7 +332,7 @@ public final class CaptureFeature {
             isBusy = false
             if let id = screen.displayID { onRecordRequest?(.display(id)) }
         case let (.fullscreen(screen), _):
-            shoot(ShotRequest(source: .screen, screen: screen, timer: timer, copies: copies, sourceApp: previousApp))
+            shoot(ShotRequest(source: .screen, screen: screen, timer: timer, copies: copies, sourceApp: sourceApp))
 
         case let (.area(_, screen, rect), .record):
             isBusy = false
@@ -346,17 +346,17 @@ public final class CaptureFeature {
             Task { await copyText(captured.image, on: screen) }
 
         case let (.area(_, screen, rect), .scroll):
-            startScrolling(on: screen, rect: rect, copies: copies, sourceApp: previousApp)
+            startScrolling(on: screen, rect: rect, copies: copies, sourceApp: sourceApp)
 
         case let (.area(captured, screen, rect), .screenshot):
             shoot(ShotRequest(
                 source: timer > 0 ? .rect(rect) : .frozen(captured, rect: rect), screen: screen, timer: timer,
-                copies: copies, sourceApp: previousApp
+                copies: copies, sourceApp: sourceApp
             ))
 
         case let (.window(id, screen), _):
             shoot(ShotRequest(
-                source: .window(id, frame: nil), screen: screen, timer: timer, copies: copies, sourceApp: previousApp
+                source: .window(id, frame: nil), screen: screen, timer: timer, copies: copies, sourceApp: sourceApp
             ))
         }
     }
@@ -455,7 +455,7 @@ public final class CaptureFeature {
             inPlaceEditor = nil
             isBusy = false
             prepareAhead(after: 1)
-            sourceApp?.activate()
+            FocusHandoff.giveBack(to: sourceApp)
             if let (action, result) = result {
                 deliverEdited(result, action: action, on: screen, sourceApp: sourceApp)
             }
